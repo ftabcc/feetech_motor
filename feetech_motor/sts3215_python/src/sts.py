@@ -5,7 +5,7 @@ from .protocol_packet_handler import *
 from .group_sync_read import *
 from .group_sync_write import *
 
-#波特率定义
+#bps_def
 STS_1M = 0
 STS_0_5M = 1
 STS_250K = 2
@@ -15,12 +15,12 @@ STS_76800 = 5
 STS_57600 = 6
 STS_38400 = 7
 
-#内存表定义
-#-------EPROM(只读)--------
+#memory table definition
+#-------EPROM(읽기 전용)--------
 STS_MODEL_L = 3
 STS_MODEL_H = 4
 
-#-------EPROM(读写)--------
+#-------EPROM(읽기와 쓰기)--------
 STS_ID = 5
 STS_BAUD_RATE = 6
 STS_MIN_ANGLE_LIMIT_L = 9
@@ -33,7 +33,7 @@ STS_OFS_L = 31
 STS_OFS_H = 32
 STS_MODE = 33
 
-#-------SRAM(读写)--------
+#-------SRAM(읽기와 쓰기)--------
 STS_TORQUE_ENABLE = 40
 STS_ACC = 41
 STS_GOAL_POSITION_L = 42
@@ -44,7 +44,7 @@ STS_GOAL_SPEED_L = 46
 STS_GOAL_SPEED_H = 47
 STS_LOCK = 55
 
-#-------SRAM(只读)--------
+#-------SRAM(읽기 전용)--------
 STS_PRESENT_POSITION_L = 56
 STS_PRESENT_POSITION_H = 57
 STS_PRESENT_SPEED_L = 58

@@ -42,15 +42,6 @@ STS_MOVING_ACC              = 50          # STServo moving acc
 sts_goal_position = [STS_MINIMUM_POSITION_VALUE, STS_MAXIMUM_POSITION_VALUE]         # Goal position
 portHandler = PortHandler(DEVICENAME)
 packetHandler = sts(portHandler)
-if portHandler.openPort():
-    print("Succeeded to open the port")
-else:
-    print("Failed to open the port")
-    print("Press any key to terminate...")
-    getch()
-    quit()
-
-# Set port baudrate
 if portHandler.setBaudRate(BAUDRATE):
     print("Succeeded to change the baudrate")
 else:

@@ -142,8 +142,8 @@ class protocol_packet_handler(object):
         #print "[TxPacket] %r" % txpacket
 
         # tx packet
-        self.portHandler.clearPort()
-        written_packet_length = self.portHandler.writePort(txpacket)
+        self.portHandler.ser.flush()
+        written_packet_length = self.portHandler.ser.write(packet)
         if total_packet_length != written_packet_length:
             self.portHandler.is_using = False
             return COMM_TX_FAIL

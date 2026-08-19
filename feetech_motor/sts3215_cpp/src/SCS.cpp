@@ -261,6 +261,7 @@ int	SCS::Ping(u8 ID)
 	return bBuf[0];
 }
 
+// status packet의 length가 2인지 확인.
 int SCS::checkHead()
 {
 	u8 bDat;

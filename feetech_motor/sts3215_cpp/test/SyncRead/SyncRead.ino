@@ -1,5 +1,5 @@
 /*
-同步读指令，回读ID1与ID2两个舵机的位置与速度信息
+동기 읽기(Synchronous read) 명령: 서보 ID1과 ID2의 위치 및 속도 정보를 읽어옵니다.
 */
 
 #include <SCServo.h>

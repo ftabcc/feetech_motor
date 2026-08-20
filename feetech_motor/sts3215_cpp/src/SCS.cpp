@@ -34,7 +34,8 @@ void SCS::Host2SCS(u8 *DataL, u8* DataH, u16 Data)
 	}
 }
 //두 개의 8비트 값을 하나의 16비트 값으로 결합
-//DataL은 하위 바이트, DataH는 상위 바이트
+//DataL은 하위 바이트, DataH는 상위 바이트. 
+// sts_end=0
 u16 SCS::SCS2Host(u8 DataL, u8 DataH)
 {
 	u16 Data;
@@ -261,7 +262,6 @@ int	SCS::Ping(u8 ID)
 	return bBuf[0];
 }
 
-// status packet의 length가 2인지 확인.
 int SCS::checkHead()
 {
 	u8 bDat;
@@ -302,6 +302,7 @@ int	SCS::Ack(u8 ID)
 			u8Error = ERR_SLAVE_ID;
 			return 0;
 		}
+		// check len =2, err,check_sum
 		if(bBuf[1]!=2){
 			u8Error = ERR_BUFF_LEN;
 			return 0;
@@ -372,24 +373,29 @@ int SCS::syncReadPacketRx(u8 ID, u8 *nDat)
 			if(bBuf[0]==0xff && bBuf[1]==0xff && bBuf[2]!=0xff){
 				break;
 			}
-		}
+		}//syncReadRxBufferIndex would be in 'Len'part
 		if(bBuf[2]!=ID){
 			continue;
 		}
 		if(syncReadRxBuff[syncReadRxBuffIndex++]!=(syncReadRxPacketLen+2)){
 			continue;
 		}
+		// syncReadRxBufferIndex would be in 'err'part
 		u8Status = syncReadRxBuff[syncReadRxBuffIndex++];
+		
+		// syncReadRxBufferIndex would be in 'param 0'part
 		calSum = ID + (syncReadRxPacketLen+2) + u8Status;
 		for(u8 i=0; i<syncReadRxPacketLen; i++){
 			syncReadRxPacket[i] = syncReadRxBuff[syncReadRxBuffIndex++];
 			calSum += syncReadRxPacket[i];
 		}
+		// syncReadRxBufferIndex would be in 'check_sum'part
 		calSum = ~calSum;
 		if(calSum!=syncReadRxBuff[syncReadRxBuffIndex++]){
 			u8Error = ERR_CRC_CMP;
 			return 0;
 		}
+		// syncReadRxBufferIndex would be in 'param 0'part
 		return syncReadRxPacketLen;
 	}
 	return 0;

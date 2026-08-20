@@ -23,17 +23,16 @@ void setup()
 
 void loop()
 {  
-  sms_sts.syncReadPacketTx(ID, sizeof(ID), SMS_STS_PRESENT_POSITION_L, sizeof(rxPacket));//同步读指令包发送
+  sms_sts.syncReadPacketTx(ID, sizeof(ID), SMS_STS_PRESENT_POSITION_L, sizeof(rxPacket));//syncread & receive packet.
   for(uint8_t i=0; i<sizeof(ID); i++){
-    //接收ID[i]同步读返回包
     if(!sms_sts.syncReadPacketRx(ID[i], rxPacket)){
      Serial.print("ID:");
      Serial.println(ID[i]);
      Serial.println("sync read error!");
-     continue;//接收解码失败
+     continue;
     }
-    Position = sms_sts.syncReadRxPacketToWrod(15);//解码两个字节 bit15为方向位,参数=0表示无方向位
-    Speed = sms_sts.syncReadRxPacketToWrod(15);//解码两个字节 bit15为方向位,参数=0表示无方向位
+    Position = sms_sts.syncReadRxPacketToWrod(15);//2바이트 디코딩: 15번째 비트는 방향 비트이며, 매개변수 값이 0이면 방향 비트가 없음을 나타냅니다.
+    Speed = sms_sts.syncReadRxPacketToWrod(15);//2바이트 디코딩: 15번째 비트는 방향 비트이며, 매개변수 값이 0이면 방향 비트가 없음을 나타냅니다.
     Serial.print("ID:");
     Serial.println(ID[i]);
     Serial.print("Position:");

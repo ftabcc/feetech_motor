@@ -62,34 +62,10 @@ public:
     ESPMain()
     {
         // 3개의 Task 생성
-        xTaskCreate(
-            rx_task_entry,
-            "rx_task",
-            4096,
-            this,
-            5,
-            &rx_task_handle
-        );
-
-        xTaskCreate(
-            control_task_entry,
-            "control_task",
-            4096,
-            this,
-            6,
-            &control_task_handle
-        );
-
-        xTaskCreate(
-            observation_task_entry,
-            "observation_task",
-            4096,
-            this,
-            4,
-            &observation_task_handle
-        );
+        xTaskCreate(rx_task_entry,"rx_task",4096,this,5,&rx_task_handle);
+        xTaskCreate(control_task_entry,"control_task",4096,this,6,&control_task_handle);
+        xTaskCreate(observation_task_entry,"observation_task",4096,this,4,&observation_task_handle);
     }
-
 
     void stop()
     {

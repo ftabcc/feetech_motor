@@ -10,7 +10,7 @@
 #include "tusb_cdc_acm.h" 
  
  
-void usb_init() 
+void ESP::native_usb_init() 
 { 
     tinyusb_config_t tusb_cfg = {}; 
     ESP_ERROR_CHECK( tinyusb_driver_install(&tusb_cfg) ); 
@@ -24,17 +24,64 @@ void usb_init()
     ESP_ERROR_CHECK(tusb_cdc_acm_init(&cdc_cfg)); 
 } 
 
- 
-void usb_rx_task(void *arg) 
+void ESP::native_usb_rx_callback(int itf,cdcacm_event_t *event)
+    {
+        ESPMain *self = static_cast<ESPMain*>(event->user_arg);
+        xTaskNotifyGive(self->native_usb_rx_task_handle);
+    }
+
+void ESP::native_usb_rx_task(void *arg) 
 { 
     uint8_t buffer[256]; 
     while (true) 
     { 
-        size_t rx_size = 0; //how much read 
-        esp_err_t result = tinyusb_cdcacm_read(TINYUSB_CDC_ACM_0,buffer,sizeof(buffer),&rx_size); 
-        if (result == ESP_OK && rx_size > 0) 
+        
+        ulTaskNotifyTake(pdTRUE,portMAX_DELAY);
+        
+        uint8_t bTemp;
+        size_t rx_size; //how much read 
+        
+        u8 bBuf[] = {0, 0};
+        u8 cnt = 0;
+        esp_err_t result;
+        find_head = false
+        while(true){
+            result = tinyusb_cdcacm_read(TINYUSB_CDC_ACM_0,&bTemp,1,&rx_size); // read 1byte
+            if(result == ESP_OK){
+            bBuf[1] = bBuf[0];
+            bBuf[0] = bTemp;
+            if(bBuf[0]==0xff && bBuf[1]==0xff){
+                find_head = true;
+                break;}
+            cnt++;
+            if(cnt>10){
+                find_head = false; 
+                break;}}}
+
+        uint8_t packet_len;
+        result = tinyusb_cdcacm_read(TINYUSB_CDC_ACM_0,&packet_len,1,&rx_size);
+        uint8_t data_len = packet_len - 1;
+        if(result == ESP_OK){
+            result = tinyusb_cdcacm_read(TINYUSB_CDC_ACM_0,buffer,packet_len,&rx_size);
+            if(result == ESP_OK && rx_size == packet_len){
+                uint8_t inst = buffer[0]
+                uint8_t check_sum = packet_len + inst;
+                uint8_t* data = new uint8_t[data_len]
+                for(size_t i=0; i<data_len; i++){
+                    check_sum += buffer[i+1];
+                    data[i] = buffer[i+1]}
+                    
+                check_sum = ~check_sum;
+                if(check_sum!=buffer[-1]){
+                    Error = ERR_check_sum;}
+                if()
+            }
+        }
+
+
+        if (result == ESP_OK && ) 
         { 
-            printf("RX: %.*s\n", (int)rx_size, buffer ); 
+            
             const char response[] = "ESP32 received!\r\n"; 
             tinyusb_cdcacm_write_queue( TINYUSB_CDC_ACM_0, (const uint8_t *)response, strlen(response) ); 
             tinyusb_cdcacm_write_flush( TINYUSB_CDC_ACM_0 ); 
@@ -48,7 +95,7 @@ void usb_rx_task(void *arg)
 extern "C" void app_main() 
 { 
     usb_init(); 
-    xTaskCreate( usb_rx_task, "usb_rx_task", 4096, nullptr, 5, nullptr ); 
+    xTaskCreate(usb_rx_task, "usb_rx_task", 4096, nullptr, 5, nullptr ); 
 }
 
 void ESP::rx_pi_packet()

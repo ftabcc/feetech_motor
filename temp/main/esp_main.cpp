@@ -23,7 +23,7 @@ void usb_init()
  
     ESP_ERROR_CHECK(tusb_cdc_acm_init(&cdc_cfg)); 
 } 
-
+ 
  
 void usb_rx_task(void *arg) 
 { 
@@ -49,31 +49,4 @@ extern "C" void app_main()
 { 
     usb_init(); 
     xTaskCreate( usb_rx_task, "usb_rx_task", 4096, nullptr, 5, nullptr ); 
-}
-
-void ESP::rx_pi_packet()
-{
-
-}
-
-void ESP::control_task(void *arg)
-{
-    TickType_t last_wake = xTaskGetTickCount();
-
-    while (true)
-    {
-        // ===== 20ms마다 실행할 코드 =====
-        control_motor();
-
-        // 다음 20ms 주기까지 대기
-        vTaskDelayUntil(
-            &last_wake,
-            pdMS_TO_TICKS(20)
-        );
-    }
-}
-
-void ESP::quintic_heremit()
-{
-
 }

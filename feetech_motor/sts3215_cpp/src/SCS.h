@@ -1,9 +1,9 @@
-﻿#ifndef _SCS_H
-#define _SCS_H
+﻿#ifndef _ESP_SYSTEM
+#define _ESP_SYSTEM
 
 #include "INST.h"
 
-class SCS{
+class ESP{
 public:
 	SCS();
 	SCS(u8 End);

@@ -24,6 +24,9 @@ void ESP::native_usb_init()
     ESP_ERROR_CHECK(tusb_cdc_acm_init(&cdc_cfg)); 
 } 
 
+
+//test기반에서 큐를 링버퍼로 교환하고 노티파이 vs xQueueReceive(큐리시브 말고 링버퍼리시브함수있나?)
+
 void ESP::native_usb_rx_callback(int itf,cdcacm_event_t *event)
     {
         ESPMain *self = static_cast<ESPMain*>(event->user_arg);

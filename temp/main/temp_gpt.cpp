@@ -35,12 +35,13 @@ typedef struct
 
 } packet_t;
 
-static bool packet_parser(packet_t *packet,uint8_t byte)
+static bool ESP::packet_parser(packet_t *packet,uint8_t byte)
 {
-/*패킷을 읽던중 ff,ff가 들어오면 새 패킷으로 시작하지 않고
- 기존에 읽던 패킷을 len을 참고해서 다 읽고,
-check_sum확인했을때 맞다면 중간에 읽은 ff,ff를
-기존 패킷의 데이터의 일부라고 보도록 하는게 합리적*/
+    /*패킷을 읽던중 ff,ff가 들어오면 새 패킷으로 시작하지 않고
+    기존에 읽던 패킷을 len을 참고해서 다 읽고,
+    check_sum확인했을때 맞다면 중간에 읽은 ff,ff를
+    기존 패킷의 데이터의 일부라고 보도록 하는게 합리적*/
+    // 체크섬 실패시 버렸던 버퍼에서 헤더 유무파악하기
 
     /* 1. 첫 번째 FF 탐색 */
     if (packet->idx == 0)
@@ -59,8 +60,7 @@ check_sum확인했을때 맞다면 중간에 읽은 ff,ff를
         if (byte == 0xFF)
         {
             packet->buffer[1] = byte;
-            packet->idx = 2;
-}
+            packet->idx = 2;}
         else
         {packet->idx = 0;}
         return false;
@@ -112,7 +112,7 @@ check_sum확인했을때 맞다면 중간에 읽은 ff,ff를
     return false;
 }
 
-static void tinyusb_cdc_rx_callback(int itf,cdcacm_event_t *event)
+static void ESP::tinyusb_cdc_rx_callback(int itf,cdcacm_event_t *event)
 {
     (void)event;
 
@@ -136,7 +136,7 @@ static void tinyusb_cdc_rx_callback(int itf,cdcacm_event_t *event)
     {xTaskNotifyGive(rx_task_handle);}
 }
 
-static void rx_task(void *arg)
+static void ESP::rx_task(void *arg)
 {
     (void)arg; // for prevent warning: unused parameter 'arg'
 
@@ -163,7 +163,7 @@ static void rx_task(void *arg)
     }
 }
 
-void app_main(void)
+void ESP::app_main(void)
 {
     rx_ringbuf = xRingbufferCreate(RX_RINGBUF_SIZE,RINGBUF_TYPE_BYTEBUF);
     assert(rx_ringbuf != NULL);

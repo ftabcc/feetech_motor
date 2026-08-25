@@ -25,6 +25,22 @@ static TaskHandle_t rx_task_handle = NULL;
 
 static uint8_t rx_buf[CONFIG_TINYUSB_CDC_RX_BUFSIZE];
 
+#define PACKET_HEADER 0xFF
+#define PACKET_MAX_LEN 255
+/*
+typedef struct
+{
+    uint8_t raw[PACKET_MAX_LEN + 3];
+    size_t len;
+} packet_t;
+
+typedef struct
+{
+    uint8_t buffer[PACKET_MAX_LEN + 3];
+    size_t len;
+    size_t expected_len;
+} packet_parser_t;
+*/
 typedef struct
 {
     uint8_t *data;
@@ -39,27 +55,83 @@ typedef struct
 } packet_parser_t;
 
 
-static bool packet_parser_push(
-    packet_parser_t *parser,
-    uint8_t byte,
-    packet_t *packet)
-{
-    (void)parser;
-    (void)byte;
-    (void)packet;
 
-    /*
-     * TODO:
-     *
-     * 실제 프로토콜에 맞춰 구현.
-     *
-     * 예:
-     * 1. header 탐색
-     * 2. packet length 확인
-     * 3. 필요한 byte 수집
-     * 4. checksum 수집
-     * 5. packet 완성 여부 판단
-     */
+static bool packet_parser_push(packet_parser_t *parser,uint8_t byte,packet_t *packet)
+{
+    /* 1. 첫 번째 FF 탐색 */
+    if (parser->len == 0)
+    {
+        if (byte == 0xFF)
+        {
+            parser->buffer[0] = byte;
+            parser->len = 1;
+        }
+
+        return false;
+    }
+
+    /* 2. 두 번째 FF 확인 */
+    if (parser->len == 1)
+    {
+        if (byte == 0xFF)
+        {
+            parser->buffer[1] = byte;
+            parser->len = 2;
+        }
+        else
+        {
+            parser->len = 0;
+        }
+
+        return false;
+    }
+
+    /* 3. 나머지 byte 저장 */
+    if (parser->len >= sizeof(parser->buffer))
+    {
+        parser->len = 0;
+        parser->expected_len = 0;
+        return false;
+    }
+
+    parser->buffer[parser->len] = byte;
+    parser->len++;
+
+    /* 4. LEN 확인 */
+    if (parser->len == 3)
+    {
+        uint8_t len_field = parser->buffer[2];
+
+        /* LEN = INST + DATA + CHECKSUM */
+        if (len_field < 2)
+        {
+            parser->len = 0;
+            parser->expected_len = 0;
+            return false;
+        }
+
+        parser->expected_len = (size_t)len_field + 3;
+
+        if (parser->expected_len > sizeof(parser->buffer))
+        {
+            parser->len = 0;
+            parser->expected_len = 0;
+            return false;
+        }
+    }
+
+    /* 5. 패킷 완성 확인 */
+    if (parser->expected_len != 0 &&
+        parser->len == parser->expected_len)
+    {
+        memcpy(packet->raw, parser->buffer, parser->len);
+        packet->len = parser->len;
+
+        parser->len = 0;
+        parser->expected_len = 0;
+
+        return true;
+    }
 
     return false;
 }
@@ -122,12 +194,7 @@ static void tinyusb_cdc_rx_callback(int itf,cdcacm_event_t *event)
 
     if (ret_rb != pdTRUE)
     {
-        ESP_LOGE(
-            TAG,
-            "RX Ring Buffer full. Data dropped: %u bytes",
-            (unsigned)rx_size
-        );
-
+        ESP_LOGE(TAG,"RX Ring Buffer full. Data dropped: %u bytes",(unsigned)rx_size);
         return;
     }
 
@@ -153,9 +220,7 @@ static void rx_task(void *arg)
             uint8_t *data = (uint8_t *)xRingbufferReceive(rx_ringbuf,&item_size,0);
 
             if (data == NULL)
-            {
-                break;
-            }
+            {break;}
             for (size_t i = 0; i < item_size; i++)
             {
                 if (packet_parser_push(&parser,data[i],&packet))
@@ -166,11 +231,6 @@ static void rx_task(void *arg)
                     {ESP_LOGW(TAG,"Invalid checksum");}
                 }
             }
-
-            /*
-             * Ring Buffer에서 받은 데이터를
-             * 사용 완료했음을 알려준다.
-             */
             vRingbufferReturnItem(rx_ringbuf,(void *)data);
         }
     }

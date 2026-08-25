@@ -25,154 +25,91 @@ static TaskHandle_t rx_task_handle = NULL;
 
 static uint8_t rx_buf[CONFIG_TINYUSB_CDC_RX_BUFSIZE];
 
-#define PACKET_HEADER 0xFF
-#define PACKET_MAX_LEN 255
-/*
-typedef struct
-{
-    uint8_t raw[PACKET_MAX_LEN + 3];
-    size_t len;
-} packet_t;
+#define PACKET_MAX_LEN 100
 
 typedef struct
 {
     uint8_t buffer[PACKET_MAX_LEN + 3];
-    size_t len;
-    size_t expected_len;
-} packet_parser_t;
-*/
-typedef struct
-{
-    uint8_t *data;
-    size_t len;
+    size_t len; // LEN = HEAD(2) + LEN(1) + INST(1) + DATA(N) + CHECKSUM(1) = N+5 (N>=0)
+    size_t idx;
+
 } packet_t;
 
-typedef struct
+static bool packet_parser(packet_t *packet,uint8_t byte)
 {
-    uint8_t buffer[256];
-    size_t len;
+/*패킷을 읽던중 ff,ff가 들어오면 새 패킷으로 시작하지 않고
+ 기존에 읽던 패킷을 len을 참고해서 다 읽고,
+check_sum확인했을때 맞다면 중간에 읽은 ff,ff를
+기존 패킷의 데이터의 일부라고 보도록 하는게 합리적*/
 
-} packet_parser_t;
-
-
-
-static bool packet_parser_push(packet_parser_t *parser,uint8_t byte,packet_t *packet)
-{
     /* 1. 첫 번째 FF 탐색 */
-    if (parser->len == 0)
+    if (packet->idx == 0)
     {
         if (byte == 0xFF)
         {
-            parser->buffer[0] = byte;
-            parser->len = 1;
+            packet->buffer[0] = byte;
+            packet->idx = 1;
         }
-
         return false;
     }
 
     /* 2. 두 번째 FF 확인 */
-    if (parser->len == 1)
+    if (packet->idx == 1)
     {
         if (byte == 0xFF)
         {
-            parser->buffer[1] = byte;
-            parser->len = 2;
-        }
+            packet->buffer[1] = byte;
+            packet->idx = 2;
+}
         else
-        {
-            parser->len = 0;
-        }
-
+        {packet->idx = 0;}
         return false;
     }
 
-    /* 3. 나머지 byte 저장 */
-    if (parser->len >= sizeof(parser->buffer))
+    if (packet->idx >= sizeof(packet->buffer))
     {
-        parser->len = 0;
-        parser->expected_len = 0;
+        packet->idx = 0;
+        packet->len = 0;
         return false;
     }
 
-    parser->buffer[parser->len] = byte;
-    parser->len++;
+    packet->buffer[packet->idx] = byte;
+    packet->idx++;
 
     /* 4. LEN 확인 */
-    if (parser->len == 3)
+    if (packet->idx == 3)
     {
-        uint8_t len_field = parser->buffer[2];
+        packet->len = packet->buffer[2];
 
-        /* LEN = INST + DATA + CHECKSUM */
-        if (len_field < 2)
+        if (packet->len < 5)
         {
-            parser->len = 0;
-            parser->expected_len = 0;
+            packet->idx = 0;
+            packet->len = 0;
             return false;
         }
 
-        parser->expected_len = (size_t)len_field + 3;
-
-        if (parser->expected_len > sizeof(parser->buffer))
+        if (packet->len > sizeof(packet->buffer))
         {
-            parser->len = 0;
-            parser->expected_len = 0;
+            packet->idx = 0;
+            packet->len = 0;
             return false;
         }
     }
 
     /* 5. 패킷 완성 확인 */
-    if (parser->expected_len != 0 &&
-        parser->len == parser->expected_len)
+    if (packet->idx >= 5 && packet->idx == packet->len)
     {
-        memcpy(packet->raw, parser->buffer, parser->len);
-        packet->len = parser->len;
+        uint16_t sum = 0;
+        for (size_t i = 2; i < packet->idx - 1; i++)
+        {sum += packet->buffer[i];} // without header(0xff,0xff)
+        uint8_t checksum = (uint8_t)(sum & 0xFF);
 
-        parser->len = 0;
-        parser->expected_len = 0;
-
-        return true;
+        if (checksum == packet->buffer[packet->len - 1])
+        {   packet->idx = 0;
+            packet->len = 0;
+            return true;}
     }
-
     return false;
-}
-
-
-static bool packet_checksum_valid(const packet_t *packet)
-{
-    (void)packet;
-
-    /*
-     * TODO:
-     * 실제 프로토콜의 checksum 계산법 구현.
-     */
-
-    return false;
-}
-
-
-static void dispatch_packet(const packet_t *packet)
-{
-    (void)packet;
-
-    /*
-     * TODO:
-     *
-     * 실제 프로토콜에 맞춰 INST를 읽고
-     * 하위 함수를 호출한다.
-     *
-     * 예:
-     *
-     * switch (inst)
-     * {
-     *     case ...:
-     *         ...
-     *         break;
-     *
-     *     case ...:
-     *         ...
-     *         break;
-     * }
-     */
 }
 
 static void tinyusb_cdc_rx_callback(int itf,cdcacm_event_t *event)
@@ -183,9 +120,8 @@ static void tinyusb_cdc_rx_callback(int itf,cdcacm_event_t *event)
     esp_err_t ret = tinyusb_cdcacm_read(itf,rx_buf,sizeof(rx_buf),&rx_size);
 
     if (ret != ESP_OK)
-    {
-        ESP_LOGE(TAG, "tinyusb_cdcacm_read failed");
-        return;}
+    {ESP_LOGE(TAG, "tinyusb_cdcacm_read failed");
+    return;}
 
     if (rx_size == 0)
     {return;}
@@ -193,24 +129,18 @@ static void tinyusb_cdc_rx_callback(int itf,cdcacm_event_t *event)
     BaseType_t ret_rb = xRingbufferSend(rx_ringbuf,rx_buf,rx_size,0);
 
     if (ret_rb != pdTRUE)
-    {
-        ESP_LOGE(TAG,"RX Ring Buffer full. Data dropped: %u bytes",(unsigned)rx_size);
-        return;
-    }
+    {ESP_LOGE(TAG,"RX Ring Buffer full. Data dropped: %u bytes",(unsigned)rx_size);
+    return;}
 
     if (rx_task_handle != NULL)
-    {
-        xTaskNotifyGive(rx_task_handle);
-    }
+    {xTaskNotifyGive(rx_task_handle);}
 }
-
 
 static void rx_task(void *arg)
 {
     (void)arg; // for prevent warning: unused parameter 'arg'
 
-    packet_parser_t parser = {.len = 0};
-    packet_t packet;
+    packet_t packet = {.idx = 0};
     while (1)
     {
         ulTaskNotifyTake(pdTRUE,portMAX_DELAY);
@@ -223,19 +153,15 @@ static void rx_task(void *arg)
             {break;}
             for (size_t i = 0; i < item_size; i++)
             {
-                if (packet_parser_push(&parser,data[i],&packet))
-                {
-                    if (packet_checksum_valid(&packet))
-                    {dispatch_packet(&packet);}
-                    else
-                    {ESP_LOGW(TAG,"Invalid checksum");}
-                }
+                if (packet_parser(&packet,data[i],&packet))
+                    {pass}// switch case 하위함수
+                // else
+                //     {ESP_LOGW(TAG,"Invalid checksum");}
             }
             vRingbufferReturnItem(rx_ringbuf,(void *)data);
         }
     }
 }
-
 
 void app_main(void)
 {

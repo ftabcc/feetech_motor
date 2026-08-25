@@ -61,14 +61,14 @@ void ESP::native_usb_rx_task(void *arg)
                 find_head = false; 
                 break;}}}
 
-        uint8_t packet_len;
-        result = tinyusb_cdcacm_read(TINYUSB_CDC_ACM_0,&packet_len,1,&rx_size);
-        uint8_t data_len = packet_len - 1;
+        uint8_t len;
+        result = tinyusb_cdcacm_read(TINYUSB_CDC_ACM_0,&len,1,&rx_size);
+        uint8_t data_len = len - 1;
         if(result == ESP_OK){
-            result = tinyusb_cdcacm_read(TINYUSB_CDC_ACM_0,buffer,packet_len,&rx_size);
-            if(result == ESP_OK && rx_size == packet_len){
+            result = tinyusb_cdcacm_read(TINYUSB_CDC_ACM_0,buffer,len,&rx_size);
+            if(result == ESP_OK && rx_size == len){
                 uint8_t inst = buffer[0]
-                uint8_t check_sum = packet_len + inst;
+                uint8_t check_sum = len + inst;
                 uint8_t* data = new uint8_t[data_len]
                 for(size_t i=0; i<data_len; i++){
                     check_sum += buffer[i+1];

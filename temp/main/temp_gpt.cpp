@@ -20,6 +20,13 @@ static const char *TAG = "CDC";
 #define RX_TASK_STACK     4096
 #define RX_TASK_PRIORITY  10
 
+#define MY_ERR 20
+#define JOINT_COUNT 12
+
+#define INST_REGISTER_TRAJECTORY  0x01
+#define INST_STOP                 0x02
+#define INST_CLEAR_TRAJECTORY     0x03
+
 static RingbufHandle_t rx_ringbuf = NULL;
 static TaskHandle_t rx_task_handle = NULL;
 
@@ -30,12 +37,71 @@ static uint8_t rx_buf[CONFIG_TINYUSB_CDC_RX_BUFSIZE];
 typedef struct
 {
     uint8_t buffer[PACKET_MAX_LEN + 3];
-    size_t len; // LEN = HEAD(2) + LEN(1) + INST(1) + DATA(N) + CHECKSUM(1) = N+5 (N>=0)
+    size_t len; // packet_total_LEN = HEAD(2) + LEN(1) + INST(1) + DATA(N) + CHECKSUM(1) = N+5 (N>=0)
     size_t idx;
 
 } packet_t;
 
-static bool ESP::packet_parser(packet_t *packet,uint8_t byte)
+typedef struct
+{
+    uint8_t data[2+12*7]; // packet_data = TIME(2) + 12*[ACC(1) + POS(2) + MAX_TIME(2) + VEL(2)]
+    uint32_t time_ms;
+
+    float q[12];
+    float v[12];
+    float a[12];
+} joint_point_t;
+
+typedef struct
+{
+    uint32_t time_ms;
+    float q[JOINT_COUNT];
+    float v[JOINT_COUNT];
+    float a[JOINT_COUNT];
+    //uint16_t max_time[12];
+} joint_point_t;
+
+
+bool register_joint_trajectory(const packet_t *packet,joint_point_t *point)
+{
+    const size_t data_len = 2 + JOINT_COUNT * (1 + 2 + 2 + 2); // packet_data = TIME(2) + 12*[ACC(1) + POS(2) + MAX_TIME(2) + VEL(2)]
+    if (packet->len < 4 + data_len + 1)
+        return false;
+    if (packet == NULL || point == NULL)
+        return false;    
+
+    size_t idx = 4;
+
+    // TIME(2)
+    uint16_t time = ((uint16_t)packet->buffer[idx] << 8)|(uint16_t)packet->buffer[idx + 1];
+    point->time_ms = time;
+    idx += 2;
+
+    for (int i = 0; i < JOINT_COUNT; i++)
+    {
+        // ACC(1)
+        uint8_t acc = packet->buffer[idx];
+        idx += 1;
+        // POS(2)
+        uint16_t pos = ((uint16_t)packet->buffer[idx] << 8)|(uint16_t)packet->buffer[idx + 1];
+        idx += 2;
+        // MAX_TIME(2)
+        uint16_t max_time = ((uint16_t)packet->buffer[idx] << 8)|(uint16_t)packet->buffer[idx + 1];
+        idx += 2;
+        // VEL(2)
+        uint16_t vel = ((uint16_t)packet->buffer[idx] << 8)|(uint16_t)packet->buffer[idx + 1];
+        idx += 2;
+        // joint_point_t에 저장
+        point->a[i] = (float)acc;
+        point->q[i] = (float)pos;
+        // point->max_time[i] = max_time;
+        point->v[i] = (float)vel;
+    }
+    return true;
+}
+
+
+static int ESP::packet_parser(packet_t *packet,uint8_t byte)
 {
     /*패킷을 읽던중 ff,ff가 들어오면 새 패킷으로 시작하지 않고
     기존에 읽던 패킷을 len을 참고해서 다 읽고,
@@ -107,6 +173,26 @@ static bool ESP::packet_parser(packet_t *packet,uint8_t byte)
         if (checksum == packet->buffer[packet->len - 1])
         {   packet->idx = 0;
             packet->len = 0;
+            uint8_t inst = packet->buffer[3];
+
+            switch (inst)
+            {
+                case INST_REGISTER_TRAJECTORY:
+                    register_joint_trajectory(packet);
+                    break;
+
+                case INST_STOP:
+                    stop_motor();
+                    break;
+
+                case INST_CLEAR_TRAJECTORY:
+                    clear_trajectory();
+                    break;
+
+                default:
+                    // 알 수 없는 INST
+                    break;
+            }
             return true;}
     }
     return false;
@@ -153,7 +239,7 @@ static void ESP::rx_task(void *arg)
             {break;}
             for (size_t i = 0; i < item_size; i++)
             {
-                if (packet_parser(&packet,data[i],&packet))
+                if (packet_parser(&packet,data[i]))
                     {pass}// switch case 하위함수
                 // else
                 //     {ESP_LOGW(TAG,"Invalid checksum");}

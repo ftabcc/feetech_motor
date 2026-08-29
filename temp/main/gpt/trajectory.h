@@ -17,12 +17,11 @@ typedef struct {
 
 typedef struct {
     joint_point_t points[TRAJECTORY_MAX_POINTS];
+    size_t write_idx;   // 다음에 넣을 위치
+    size_t read_idx;  // 다음에 꺼낼 위치
     size_t count;
 } trajectory_t;
 
-bool generate_quintic_trajectory(
-    const joint_point_t *p0,
-    const joint_point_t *p1,
-    trajectory_t *trajectory);
+bool generate_quintic_trajectory(const joint_point_t *p0,const joint_point_t *p1,trajectory_t *trajectory);
 
 #endif

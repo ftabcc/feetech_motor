@@ -1,6 +1,6 @@
 #include "trajectory.h"
 
-static void quintic_hermite(const joint_point_t *p0,const joint_point_t *p1,uint32_t t_ms,joint_point_t *out)
+static void quintic_hermite(const joint_point_t *p0,const joint_point_t *p1,uint32_t t_ms,joint_point_t *point)
 {
     float T = (float)(p1->time_ms - p0->time_ms) / 1000.0f;
     float t = (float)t_ms / 1000.0f;
@@ -32,23 +32,12 @@ static void quintic_hermite(const joint_point_t *p0,const joint_point_t *p1,uint
     float ddh4 = 1 - 9*s + 18*s2 - 10*s3;
     float ddh5 = 3*s - 12*s2 + 10*s3;
 
-    out->time_ms = p0->time_ms + t_ms;
+    point->time_ms = p0->time_ms + t_ms;
 
     for (int i = 0; i < JOINT_COUNT; i++) {
-        out->q[i] =
-            h0*p0->q[i] + h1*p1->q[i] +
-            h2*T*p0->v[i] + h3*T*p1->v[i] +
-            h4*T*T*p0->a[i] + h5*T*T*p1->a[i];
-
-        out->v[i] =
-            (dh0*p0->q[i] + dh1*p1->q[i] +
-             dh2*T*p0->v[i] + dh3*T*p1->v[i] +
-             dh4*T*T*p0->a[i] + dh5*T*T*p1->a[i]) / T;
-
-        out->a[i] =
-            (ddh0*p0->q[i] + ddh1*p1->q[i] +
-             ddh2*T*p0->v[i] + ddh3*T*p1->v[i] +
-             ddh4*T*T*p0->a[i] + ddh5*T*T*p1->a[i]) / (T*T);
+        point->q[i] = h0*p0->q[i] + h1*p1->q[i] + h2*T*p0->v[i] + h3*T*p1->v[i] + h4*T*T*p0->a[i] + h5*T*T*p1->a[i];
+        point->v[i] = (dh0*p0->q[i] + dh1*p1->q[i] + dh2*T*p0->v[i] + dh3*T*p1->v[i] + dh4*T*T*p0->a[i] + dh5*T*T*p1->a[i]) / T;
+        point->a[i] = (ddh0*p0->q[i] + ddh1*p1->q[i] + ddh2*T*p0->v[i] + ddh3*T*p1->v[i] + ddh4*T*T*p0->a[i] + ddh5*T*T*p1->a[i]) / (T*T);
     }
 }
 
@@ -69,16 +58,13 @@ bool generate_quintic_trajectory(const joint_point_t *p0,const joint_point_t *p1
 
     if (count > TRAJECTORY_MAX_POINTS)
         return false;
-
-    trajectory->count = count;
-
+    
     // without start point
     for (size_t i = 1; i < count; i++) {
         uint32_t t_ms = i * CONTROL_PERIOD_MS;
-
-        quintic_hermite(
-            p0, p1, t_ms,
-            &trajectory->points[i]);
+        quintic_hermite(p0, p1, t_ms,&trajectory->points[trajectory->write_idx]);
+        trajectory->write_idx = (trajectory->write_idx_idx + 1) % TRAJECTORY_BUFFER_SIZE;
+        trajectory->count += count;
     }
 
     return true;

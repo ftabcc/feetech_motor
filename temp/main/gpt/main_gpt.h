@@ -17,6 +17,8 @@
 
 #include "driver/uart.h"
 #include "driver/i2c_master.h"
+// what i made
+#include "trajectory.h"
 
 #define PACKET_MAX_LEN      100
 #define RX_RINGBUF_SIZE     4096

@@ -61,7 +61,6 @@ typedef struct
     //uint16_t max_time[12];
 } joint_point_t;
 
-
 bool register_joint_trajectory(const packet_t *packet,joint_point_t *point)
 {
     const size_t data_len = 2 + JOINT_COUNT * (1 + 2 + 2 + 2); // packet_data = TIME(2) + 12*[ACC(1) + POS(2) + MAX_TIME(2) + VEL(2)]
@@ -99,7 +98,6 @@ bool register_joint_trajectory(const packet_t *packet,joint_point_t *point)
     }
     return true;
 }
-
 
 static int ESP::packet_parser(packet_t *packet,uint8_t byte)
 {

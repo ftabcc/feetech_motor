@@ -42,16 +42,7 @@ typedef struct
 
 } packet_t;
 
-typedef struct
-{
-    uint8_t data[2+12*7]; // packet_data = TIME(2) + 12*[ACC(1) + POS(2) + MAX_TIME(2) + VEL(2)]
-    uint32_t time_ms;
-
-    float q[12];
-    float v[12];
-    float a[12];
-} joint_point_t;
-
+// packet_data(86) = TIME(2) + 12*[ACC(1) + POS(2) + MAX_TIME(2) + VEL(2)]
 typedef struct
 {
     uint32_t time_ms;
@@ -63,12 +54,13 @@ typedef struct
 
 bool register_joint_trajectory(const packet_t *packet,joint_point_t *point)
 {
-    const size_t data_len = 2 + JOINT_COUNT * (1 + 2 + 2 + 2); // packet_data = TIME(2) + 12*[ACC(1) + POS(2) + MAX_TIME(2) + VEL(2)]
-    if (packet->len < 4 + data_len + 1)
-        return false;
     if (packet == NULL || point == NULL)
         return false;    
 
+    const size_t data_len = 2 + JOINT_COUNT * (1 + 2 + 2 + 2); // packet_data = TIME(2) + 12*[ACC(1) + POS(2) + MAX_TIME(2) + VEL(2)]
+    if (packet->len < 4 + data_len + 1)
+        return false;
+    
     size_t idx = 4;
 
     // TIME(2)
@@ -96,6 +88,8 @@ bool register_joint_trajectory(const packet_t *packet,joint_point_t *point)
         // point->max_time[i] = max_time;
         point->v[i] = (float)vel;
     }
+    generate_quintic_trajectory(&prev_point,&point,&trajectory);
+    prev_point = point;
     return true;
 }
 
@@ -269,6 +263,8 @@ void ESP::app_main(void)
 
     ESP_ERROR_CHECK(tinyusb_cdcacm_init(&acm_cfg));
     ESP_LOGI(TAG, "USB initialization DONE");
+
+    joint_point_t prev_point;
 
     while (1)
     {vTaskDelay(pdMS_TO_TICKS(1000));}

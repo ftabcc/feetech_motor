@@ -72,7 +72,8 @@ bool generate_quintic_trajectory(const joint_point_t *p0,const joint_point_t *p1
 
     trajectory->count = count;
 
-    for (size_t i = 0; i < count; i++) {
+    // without start point
+    for (size_t i = 1; i < count; i++) {
         uint32_t t_ms = i * CONTROL_PERIOD_MS;
 
         quintic_hermite(

@@ -1,4 +1,30 @@
 
+static uint8_t rx_buf[CONFIG_TINYUSB_CDC_RX_BUFSIZE];
+
+static void pi_com::init(void *arg)
+{
+    rx_ringbuf = xRingbufferCreate(RX_RINGBUF_SIZE,RINGBUF_TYPE_BYTEBUF);
+    assert(rx_ringbuf != NULL);
+
+    BaseType_t ret_task = xTaskCreate(rx_task,"rx_task",RX_TASK_STACK,NULL,RX_TASK_PRIORITY,&rx_task_handle);
+    assert(ret_task == pdPASS);
+
+    ESP_LOGI(TAG, "USB initialization");
+    const tinyusb_config_t tusb_cfg = TINYUSB_DEFAULT_CONFIG();
+    ESP_ERROR_CHECK(tinyusb_driver_install(&tusb_cfg));
+
+    tinyusb_config_cdcacm_t acm_cfg = {
+        .cdc_port = TINYUSB_CDC_ACM_0,
+        .callback_rx = &tinyusb_cdc_rx_callback,
+        .callback_rx_wanted_char = NULL,
+        .callback_line_state_changed = NULL,
+        .callback_line_coding_changed = NULL
+    };
+
+    ESP_ERROR_CHECK(tinyusb_cdcacm_init(&acm_cfg));
+    ESP_LOGI(TAG, "USB initialization DONE");
+}
+
 static void pi_com::rx_task(void *arg)
 {
     (void)arg; // for prevent warning: unused parameter 'arg'

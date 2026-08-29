@@ -13,7 +13,8 @@ typedef struct {
     float q[JOINT_COUNT];
     float v[JOINT_COUNT];
     float a[JOINT_COUNT];
-} joint_point_t;
+    //uint16_t max_time[12];
+} joint_point_t;// packet_data(86) = TIME(2) + 12*[ACC(1) + POS(2) + MAX_TIME(2) + VEL(2)]
 
 typedef struct {
     joint_point_t points[TRAJECTORY_MAX_POINTS];

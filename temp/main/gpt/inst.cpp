@@ -1,4 +1,8 @@
 
+#define INST_REGISTER_TRAJECTORY  0x01
+#define INST_STOP                 0x02
+#define INST_CLEAR_TRAJECTORY     0x03
+
 bool register_joint_trajectory(const packet_t *packet,joint_point_t *point, joint_ring_buffer_t *rb)
 {
     if (packet == NULL || point == NULL)

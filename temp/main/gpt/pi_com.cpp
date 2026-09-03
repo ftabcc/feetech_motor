@@ -1,4 +1,16 @@
+#include "pi_com.h"
 
+#include <assert.h>
+
+#include "esp_log.h"
+#include "esp_err.h"
+
+#include "tinyusb.h"
+#include "tusb_cdc_acm.h"
+
+RingbufHandle_t pi_com::rx_ringbuf = NULL;
+TaskHandle_t pi_com::rx_task_handle = NULL;
+const char *pi_com::TAG = "PI_COM";
 static uint8_t rx_buf[CONFIG_TINYUSB_CDC_RX_BUFSIZE];
 
 static void pi_com::init(void *arg)
@@ -42,7 +54,7 @@ static void pi_com::rx_task(void *arg)
             {break;}
             for (size_t i = 0; i < item_size; i++)
             {
-                if (packet_parser(&packet,data[i]))
+                if (protocol::packet_parser(&packet,data[i]))
                     {pass}// switch case 하위함수
                 // else
                 //     {ESP_LOGW(TAG,"Invalid checksum");}

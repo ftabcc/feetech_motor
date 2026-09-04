@@ -40,7 +40,6 @@ static void pi_com::init(void *arg)
 static void pi_com::rx_task(void *arg)
 {
     (void)arg; // for prevent warning: unused parameter 'arg'
-
     packet_t packet = {.idx = 0};
     while (1)
     {

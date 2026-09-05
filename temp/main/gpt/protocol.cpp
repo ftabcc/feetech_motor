@@ -1,7 +1,6 @@
 #include "protocol.h"
 
-// packet_data(86) = TIME(2) + 12*[ACC(1) + POS(2) + MAX_TIME(2) + VEL(2)]
-
+// 지금은 패킷검색시 계속 불필요바이트들이 있을때 마다 밀어가며 사용하는데, 밀어가면서 하지 말고 긴 버퍼에서 현재까지 확인한 idx를 변수로 두는게 나은거 같다.
 int Protocol2PacketHandler::rxPacket(PortHandler *port, uint8_t *rxpacket, bool skip_stuffing)
 {
   int     result         = COMM_TX_FAIL;
@@ -15,7 +14,7 @@ int Protocol2PacketHandler::rxPacket(PortHandler *port, uint8_t *rxpacket, bool 
     {
       uint16_t idx = 0;
 
-      // find packet header 만약 헤더검색 실패시 이미 봤던부분 skip할 수 있도록 업데이트하기.
+      // find packet header 헤더검색 성공후 쓸모없는 바이트 삭제후 다시 돌아온 경우엔 헤더검색 skip하게 하기.
       for (idx = 0; idx < (rx_length - 3); idx++)
       {
         if ((rxpacket[idx] == 0xFF) && (rxpacket[idx+1] == 0xFF) && (rxpacket[idx+2] == 0xFD) && (rxpacket[idx+3] != 0xFD)) // rxpacket[idx+3] != 0xFD는 byte stuffing검사
@@ -28,7 +27,7 @@ int Protocol2PacketHandler::rxPacket(PortHandler *port, uint8_t *rxpacket, bool 
            DXL_MAKEWORD(rxpacket[PKT_LENGTH_L], rxpacket[PKT_LENGTH_H]) > RXPACKET_MAX_LEN ||
            rxpacket[PKT_INSTRUCTION] != 0x55)// rxpacket[PKT_ID] > 0xFC || // FAST protocol responds with a broadcast ID
         {
-          // remove the first byte in the packet 헤더검색했으나 진짜가 아니라면 헤더라고 판단한 바이트 수(4)만큼 건너뛰게 하기.
+          // remove the first byte in the packet 가짜헤더를 찾은경우엔 가짜헤더 일부가 진짜헤더가 될 수없으니 가짜헤더 바이트 만큼 삭제하기.
           for (uint16_t s = 0; s < rx_length - 1; s++)
             rxpacket[s] = rxpacket[1 + s];
           //memcpy(&rxpacket[0], &rxpacket[idx], rx_length - idx);
@@ -68,7 +67,7 @@ int Protocol2PacketHandler::rxPacket(PortHandler *port, uint8_t *rxpacket, bool 
       }
       else
       {
-        // remove unnecessary packets
+        // remove unnecessary packets 만약에 아예 헤더를 검색하지 못했다면 헤더바이트수만큼만 남기고 있는데, 헤더바이트수-1만큼만 남기는게 나은거 아닌가?
         for (uint16_t s = 0; s < rx_length - idx; s++)
           rxpacket[s] = rxpacket[idx + s];
         // memmove(rxpacket, rxpacket + idx, rx_length - idx);
@@ -105,6 +104,7 @@ int Protocol2PacketHandler::rxPacket(PortHandler *port, uint8_t *rxpacket, bool 
 
 
 
+// packet_data(86) = TIME(2) + 12*[ACC(1) + POS(2) + MAX_TIME(2) + VEL(2)]
 static int protocol::packet_parser(packet_t *packet,uint8_t byte)
 {
     /*패킷을 읽던중 ff,ff가 들어오면 새 패킷으로 시작하지 않고

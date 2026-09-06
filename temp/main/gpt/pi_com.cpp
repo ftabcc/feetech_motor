@@ -69,7 +69,7 @@ static void pi_com::tinyusb_cdc_rx_callback(int itf,cdcacm_event_t *event)
     (void)event;
 
     size_t rx_size = 0;
-    esp_err_t ret = tinyusb_cdcacm_read(itf,rx_buf,sizeof(rx_buf),&rx_size);
+    esp_err_t ret = tinyusb_cdcacm_read(itf,rx_buf,sizeof(rx_buf),&rx_size); // 어느CDC,어디저장,최대저장바이트수,실제읽은 바이트 어디저장
 
     if (ret != ESP_OK)
     {ESP_LOGE(TAG, "tinyusb_cdcacm_read failed");

@@ -92,17 +92,15 @@ static void pi_com::tinyusb_cdc_rx_callback(int itf,cdcacm_event_t *event)
 // 중간 링버퍼없이 바로 패킷확인
 static void pi_com::tinyusb_cdc_rx_callback(int itf,cdcacm_event_t *event)
 {
-
   (void)event;
 
-  size_t rx_size = 0;
-
-  const uint16_t HEADER_LEN = 3;   // 진짜 헤더 FF FF FD (3바이트). 4번째 바이트는 패턴이 아니라 byte stuffing 여부를 가리는 lookahead 바이트일 뿐, 프로토콜 의미는 원본과 동일.
-  int      result           = COMM_TX_FAIL;
+  const uint16_t HEADER_LEN = 3;   //  FF FF FD + byte stuffing 여부 바이트
+  int      result           = COMM_TX_FAIL; // 종류: COMM_TX_FAIL, COMM_SUCCESS, COMM_RX_CORRUPT
+  size_t rx_size            = 0;     // cdc로 이번에 실제로 읽은 바이트 수
   uint16_t rx_length        = 0;    // 지금까지 확보한 유효 바이트 수 (write_idx 역할)
   uint16_t wait_length      = 11;   // 지금 기다리는 전체 패킷 길이 (최소 상태패킷 길이로 시작)
   uint16_t min_length       = 11;
-  uint16_t search_idx       = 0;    // [0, search_idx) 구간은 "헤더가 시작될 수 없다"고 이미 결론난 영역
+  uint16_t idx              = 0;    // 이번에 확인하기 시작하는 바이트 idx. idx이전은 헤더시작불가능 영역. 
   bool     header_confirmed = false;// 헤더+Reserved+Length+Instruction 검증이 끝나면 true
 
   while (true)
@@ -112,7 +110,6 @@ static void pi_com::tinyusb_cdc_rx_callback(int itf,cdcacm_event_t *event)
     if (ret != ESP_OK)
     {ESP_LOGE(TAG, "tinyusb_cdcacm_read failed");
     return;}
-
     if (rx_size == 0)
     {return;}
     
@@ -121,17 +118,17 @@ static void pi_com::tinyusb_cdc_rx_callback(int itf,cdcacm_event_t *event)
     {
       if (!header_confirmed)
       {
-        uint16_t idx   = search_idx;
-        uint16_t limit = rx_length - HEADER_LEN;   // idx는 [search_idx, limit) 범위에서만 확정 판정 가능
+        uint16_t limit = rx_length - HEADER_LEN;
         bool     found = false;
 
-        while (idx < limit)
+        while (idx < limit) // limit이전까지만 헤더 확인 가능
         {
           uint8_t *p = (uint8_t *)memchr(&rxpacket[idx], 0xFF, (size_t)(limit - idx)); // memchr(시작주소, 찾을값, 검색할바이트수);
           if (p == nullptr)
           {idx = limit;   // 남은 구간에 0xFF 없으므로 더 볼 필요 없음
             break;
           }
+          //-----------------------------------여기까지 확인
           idx = (uint16_t)(p - rxpacket);
           if ((rxpacket[idx + 1] == 0xFF) &&(rxpacket[idx + 2] == 0xFD) &&(rxpacket[idx + 3] != 0xFD))
           {found = true;

@@ -1,5 +1,88 @@
 #include "protocol.h"
 
+
+RingBuffer::RingBuffer()
+{
+    write_idx = 0;
+    read_idx = 0;
+    count = 0;
+}
+
+bool RingBuffer::write(uint8_t data)
+{
+    if (count >= RING_BUFFER_SIZE)
+    {return false;}
+
+    buffer[write_idx] = data;
+    write_idx++;
+    if (write_idx >= RING_BUFFER_SIZE)
+    {write_idx = 0;}
+    count++;
+    return true;
+}
+
+size_t RingBuffer::write(const uint8_t* data, size_t len)
+{
+    size_t written = 0;
+    while (written < len)
+    {
+        if (!write(data[written]))
+        {break;}
+        written++;
+    }
+    return written;
+}
+
+bool RingBuffer::read(uint8_t& data)
+{
+    // 버퍼가 비어있는 경우
+    if (count == 0)
+    {return false;}
+    data = buffer[read_idx];
+    read_idx++;
+    if (read_idx >= RING_BUFFER_SIZE)
+    {read_idx = 0;}
+    count--;
+    return true;
+}
+
+size_t RingBuffer::read(uint8_t* data, size_t len)
+{
+    size_t read_count = 0;
+    while (read_count < len)
+    {
+        if (!read(data[read_count]))
+        {break;}
+        read_count++;
+    }
+    return read_count;
+}
+
+
+bool RingBuffer::peek(size_t offset, uint8_t& data) const
+{
+    if (offset >= count)
+    {return false;}
+    size_t index = read_idx + offset;
+    if (index >= RING_BUFFER_SIZE)
+    {index -= RING_BUFFER_SIZE;}
+    data = buffer[index];
+    return true;
+}
+
+size_t RingBuffer::available() const
+{return count;}
+
+size_t RingBuffer::free_space() const
+{return RING_BUFFER_SIZE - count;}
+
+void RingBuffer::clear()
+{
+    write_idx = 0;
+    read_idx = 0;
+    count = 0;
+}
+
 // 지금은 패킷검색시 계속 불필요바이트들이 있을때 마다 밀어가며 사용하는데, 밀어가면서 하지 말고 긴 버퍼에서 현재까지 확인한 idx를 변수로 두는게 나은거 같다.
 int Protocol2PacketHandler::rxPacket(PortHandler *port, uint8_t *rxpacket, bool skip_stuffing)
 {
@@ -249,17 +332,17 @@ int protocol::rxPacket(packet_t *packet,uint8_t byte)
           // 보류된 경우 앞의 FF 하나를 잃어버려, 다음에 stuffing이 아닌 4번째 바이트가
           // 도착해도 FF FF FD 패턴을 다시 만들 수 없다 -> 실재하는 정상 헤더를 놓치는
           // 데이터 손실. 따라서 HEADER_LEN(3) 보존이 유실 없는 "정확한" 최소 보존량이다.
-          if (limit > 0)
-            memmove(&rxpacket[0], &rxpacket[limit], HEADER_LEN); // memmove(목적지주소, 원본주소, 이동할바이트수);
+
+          // if (limit > 0)
+          //   memmove(&rxpacket[0], &rxpacket[limit], HEADER_LEN); // memmove(목적지주소, 원본주소, 이동할바이트수);
           rx_length  = HEADER_LEN;
           search_idx = 0;
           // 원본처럼 이 경로는 새 데이터가 필요하므로 아래로 흘러가 yield 후 다시 읽는다.
         }
         else if (idx > 0)
         {
-          // [증명] idx 이전 구간은 위 루프에서 이미 "헤더가 될 수 없음"이 전부 확정 판정된
-          // 상태이므로, 후보를 찾을 때마다/바이트마다가 아니라 이번에 "새 후보를 찾았을 때
-          // 딱 한 번"만 정리하면 된다.
+          // [증명] idx 이전 구간은 위 루프에서 이미 "헤더가 될 수 없음"이 전부 확정 판정된 상태이므로,
+          // 후보를 찾을 때마다/바이트마다가 아니라 이번에 "새 후보를 찾았을 때 딱 한 번"만 정리하면 된다.
           memmove(&rxpacket[0], &rxpacket[idx], rx_length - idx);
           rx_length -= idx;
           search_idx = 0;
@@ -271,9 +354,7 @@ int protocol::rxPacket(packet_t *packet,uint8_t byte)
         else
         {
           // idx == 0: 후보가 버퍼 맨 앞에 있다. 이 시점은 바깥 if에서 이미 rx_length >= wait_length(>=11)가 보장되어 있으므로 아래 필드 접근이 안전하다.
-          if (rxpacket[PKT_RESERVED] != 0x00 ||
-              DXL_MAKEWORD(rxpacket[PKT_LENGTH_L], rxpacket[PKT_LENGTH_H]) > RXPACKET_MAX_LEN ||
-              rxpacket[PKT_INSTRUCTION] != 0x55) // 내용 검증
+          if (rxpacket[PKT_RESERVED] != 0x00 || DXL_MAKEWORD(rxpacket[PKT_LENGTH_L], rxpacket[PKT_LENGTH_H]) > RXPACKET_MAX_LEN || rxpacket[PKT_INSTRUCTION] != 0x55) // 내용 검증
           {
             // [증명] 후보가 FF FF FD(+stuffing 아님) 패턴은 만족하지만 패킷 내용 검증에 실패했다.
             // 앞 4바이트(0,1,2,3) 각각이 "새 헤더의 시작"이 될 수 있는지 위치별로 확정한다.

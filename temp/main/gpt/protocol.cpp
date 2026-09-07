@@ -1,6 +1,6 @@
 #include "protocol.h"
 // pi->esp rxpacket
-static int protocol::rxPacket(int itf)
+static int protocol::rx_pi_packet(int itf)
 {
     const uint16_t min_length       = 11;   // temp버퍼의 프로토콜 구조상 될 수 있는 최소 길이
     const uint16_t max_length = 255;    // temp버퍼의 최대 길이

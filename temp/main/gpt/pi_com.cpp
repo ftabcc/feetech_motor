@@ -1,11 +1,8 @@
-#include "pi_com.h"
-#include "protocol.h"
+#include "pi_comm.h"
 
 #include <assert.h>
-
 #include "esp_log.h"
 #include "esp_err.h"
-
 #include "tinyusb.h"
 #include "tusb_cdc_acm.h"
 

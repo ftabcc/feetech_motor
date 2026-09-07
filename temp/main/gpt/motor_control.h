@@ -1,11 +1,22 @@
+#ifndef motor_comm
+#define motor_comm
 
-// Motor Driver Subsystem (UART)
-class MotorDriver {
+#include <stdint.h>
+#include "freertos/FreeRTOS.h"
+#include "freertos/task.h"
+
+class motor_comm
+{
 public:
-    esp_err_t init(uart_port_t port, int tx_pin, int rx_pin, uint32_t baud_rate);
-    esp_err_t send_command(uint8_t id, uint8_t cmd, const uint8_t *data, size_t len);
-    
+    static void init();
+private:
+    static void rx_task(int itf,cdcacm_event_t *event);
+    static int rx_packet(int itf);
+    static void tx_task(int itf,cdcacm_event_t *event);
+    static int tx_packet(int itf);
 
 private:
-    uart_port_t uart_port = UART_NUM_MAX;
 };
+
+
+#endif

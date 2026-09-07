@@ -22,6 +22,7 @@ void uart_init()
 
     // read task
     xTaskCreate(uart_rx_task,"uart_rx_task",4096,NULL,10,NULL);
+    //rxtask에서 큐넣게하기.
     // write task
 
 }
@@ -61,3 +62,122 @@ void motor_read_task(void *arg)
     int len = uart_read_bytes(UART_PORT,buffer,sizeof(buffer),pdMS_TO_TICKS(100));
 }
 
+
+
+
+
+
+
+#include "driver/uart.h"
+#include "freertos/FreeRTOS.h"
+#include "freertos/task.h"
+
+#define UART_PORT       UART_NUM_1
+#define UART_TX_PIN     GPIO_NUM_17
+#define UART_RX_PIN     GPIO_NUM_18
+#define UART_BAUDRATE   115200
+
+static QueueHandle_t uart_queue;
+
+
+// ============================================================
+// RX 데이터가 들어왔을 때 호출할 함수
+// ============================================================
+static void uart_rx_callback()
+{
+    uint8_t buffer[128];
+
+    int len = uart_read_bytes(
+        UART_PORT,
+        buffer,
+        sizeof(buffer),
+        0
+    );
+
+    if (len > 0)
+    {
+        // 여기서 수신 데이터 처리
+        // 예: ring buffer에 넣기
+    }
+}
+
+
+// ============================================================
+// UART 이벤트를 감시하는 Task
+// ============================================================
+static void uart_event_task(void *arg)
+{
+    uart_event_t event;
+
+    while (1)
+    {
+        // 이벤트가 발생할 때까지 Task가 Block됨
+        if (xQueueReceive(uart_queue, &event, portMAX_DELAY))
+        {
+            switch (event.type)
+            {
+                case UART_DATA:
+                    uart_rx_callback();
+                    break;
+
+                case UART_FIFO_OVF:
+                    uart_flush_input(UART_PORT);
+                    xQueueReset(uart_queue);
+                    break;
+
+                case UART_BUFFER_FULL:
+                    uart_flush_input(UART_PORT);
+                    xQueueReset(uart_queue);
+                    break;
+
+                default:
+                    break;
+            }
+        }
+    }
+}
+
+
+// ============================================================
+// UART 초기화
+// ============================================================
+void uart_init()
+{
+    const uart_config_t uart_config =
+    {
+        .baud_rate = UART_BAUDRATE,
+        .data_bits = UART_DATA_8_BITS,
+        .parity    = UART_PARITY_DISABLE,
+        .stop_bits = UART_STOP_BITS_1,
+        .flow_ctrl = UART_HW_FLOWCTRL_DISABLE,
+        .source_clk = UART_SCLK_DEFAULT
+    };
+
+    uart_param_config(UART_PORT, &uart_config);
+
+    uart_set_pin(
+        UART_PORT,
+        UART_TX_PIN,
+        UART_RX_PIN,
+        UART_PIN_NO_CHANGE,
+        UART_PIN_NO_CHANGE
+    );
+
+    uart_driver_install(
+        UART_PORT,
+        1024,       // RX buffer
+        1024,       // TX buffer
+        20,         // event queue size
+        &uart_queue,
+        0
+    );
+
+    xTaskCreate(
+        uart_event_task,
+        "uart_event_task",
+        4096,
+        NULL,
+        10,
+        NULL
+    );
+}

@@ -1,5 +1,5 @@
 #include "protocol.h"
-// esp<->pi rxpacket
+// pi->esp rxpacket
 static int protocol::rxPacket(int itf)
 {
     const uint16_t min_length       = 11;   // temp버퍼의 프로토콜 구조상 될 수 있는 최소 길이
@@ -67,7 +67,7 @@ static int protocol::rxPacket(int itf)
                 if (temp[idx + PKT_RESERVED] != 0x00 || temp[idx + PKT_LENGTH] > RXPACKET_MAX_LEN || temp[idx + PKT_INSTRUCTION] != 0x55) // 내용 검증
                 {
                     wait_length += HEADER_LEN;
-                    idx += HEADER_LEN;
+                    idx += HEADER_LEN; // 헤더가 될수없는 범위에 대하여 skip
                     found = false;
                     continue;
                 }
@@ -113,7 +113,10 @@ static int protocol::rxPacket(int itf)
     return result;
 }
 
-// esp<->motor(st3215-hs) rxpacket
+// motor(st3215-hs)->esp rxpacket
+// reply packet
+// head(0xFF 0xFF),ID(0~253,brod254),Length,ERROR(6bit: V,sensor,T,C,θ,F), Param(1~N), Check_sum
+// Param(1~N):data(86) = TIME(2) + 12*[ACC(1) + POS(2) + MAX_TIME(2) + VEL(2)]
 static int protocol::motor_rxPacket(int itf)
 {
     const uint16_t min_length       = 11;   // temp버퍼의 프로토콜 구조상 될 수 있는 최소 길이
@@ -163,7 +166,7 @@ static int protocol::motor_rxPacket(int itf)
                         break;
                     }
                     idx = (uint16_t)(p - temp);
-                    if ((temp[idx + 1] == 0xFF) &&(temp[idx + 2] == 0xFD) &&(temp[idx + 3] != 0xFD))
+                    if ((temp[idx + 1] == 0xFF) && (temp[idx + 2] != 0xFF)) // ID can't be 0xFF
                     {
                         found = true;
                         break;
@@ -179,10 +182,10 @@ static int protocol::motor_rxPacket(int itf)
                 
                 if (found) // 헤더패턴 확인
                 {
-                if (temp[idx + PKT_RESERVED] != 0x00 || temp[idx + PKT_LENGTH] > RXPACKET_MAX_LEN || temp[idx + PKT_INSTRUCTION] != 0x55) // 내용 검증
+                if (temp[idx + PKT_LENGTH] > RXPACKET_MAX_LEN) // 내용 검증: 패킷길이 확인
                 {
                     wait_length += HEADER_LEN;
-                    idx += HEADER_LEN;
+                    idx += HEADER_LEN; // 헤더가 될수없는 범위에 대하여 skip
                     found = false;
                     continue;
                 }
@@ -200,9 +203,13 @@ static int protocol::motor_rxPacket(int itf)
 
             if (header_confirmed)
             {
-                uint16_t crc = temp[rx_length-1];
-                result = (updateCRC(&temp[idx], rx_length - idx) == crc) ? COMM_SUCCESS : COMM_RX_CORRUPT; // updateCRC(시작주소,검증길이)
-                memmove(&rxpacket[0], &temp[idx], real_len); // memmove(목적지 시작주소, 원본시작주소, 이동할바이트수);
+                uint8_t checksum = temp[rx_length - 1];
+                uint8_t calculated_checksum = 0;
+
+                for (uint16_t i = idx + HEADER_LEN; i < rx_length - 1; i++)
+                {calculated_checksum += temp[i];}
+                result = (calculated_checksum == checksum) ? COMM_SUCCESS : COMM_RX_CORRUPT;
+                memmove(&rxpacket[0], &temp[idx], real_len);// memmove(목적지 시작주소, 원본시작주소, 이동할바이트수);
                 break;
             }
         }
@@ -227,10 +234,6 @@ static int protocol::motor_rxPacket(int itf)
     port->is_using_ = false;
     return result;
 }
-
-
-
-
 
 // packet_data(86) = TIME(2) + 12*[ACC(1) + POS(2) + MAX_TIME(2) + VEL(2)]
 static int protocol::packet_parser(packet_t *packet,uint8_t byte)

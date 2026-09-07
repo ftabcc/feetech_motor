@@ -114,6 +114,7 @@ static int protocol::rxPacket(int itf)
     {return;}
     
     rx_length += rx_size
+    if rx_length > m
     if (rx_length >= wait_length)
     {
       if (!header_confirmed)

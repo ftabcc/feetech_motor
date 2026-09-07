@@ -26,39 +26,11 @@ void init()
     ESP_ERROR_CHECK(uart_driver_install(UART_PORT,1024,1024,20,&uart_queue,0));
 
     // read task
-    xTaskCreate(motor_read_task,"motor_read_task",4096,NULL,10,NULL);
+    xTaskCreate(rx_task,"rx_task",4096,NULL,10,NULL);
     // write task
 
 }
 
-void tx_task(void *arg)
-{
-    trajectory_t *trajectory = (trajectory_t *)arg;
-
-    while (true) {
-        if (trajectory->read_idx == trajectory->write_idx) {
-            vTaskDelay(pdMS_TO_TICKS(1));
-            continue;
-        }
-
-        joint_point_t *point = &trajectory->points[trajectory->read_idx];
-
-        uint32_t now_ms = esp_timer_get_time() / 1000;
-        uint32_t target_ms = point->time_ms;
-
-        if (target_ms > now_ms) {
-            vTaskDelay(pdMS_TO_TICKS(target_ms - now_ms));
-        }
-
-        motor_control.set_point(point);
-
-        uart_write_bytes(UART_PORT,packet,sizeof(packet));
-
-        trajectory->read_idx = (trajectory->read_idx + 1) % TRAJECTORY_BUFFER_SIZE;
-        trajectory->count += count;
-
-    }
-}
 
 void rx_task(void *arg)
 {
@@ -71,11 +43,8 @@ void rx_task(void *arg)
             {
                 case UART_DATA:
                 {
-                    result = motor_comm::rx_packet()
-                    // uint8_t buffer[128];
-                    // int len = uart_read_bytes(UART_PORT,buffer,sizeof(buffer),0);
-
-
+                    int result = motor_comm::rx_packet();
+                    
                 }
 
                 case UART_FIFO_OVF:
@@ -116,7 +85,7 @@ static int rx_packet();
     bool     found            = false;// 헤더패턴 찾음 여부
     bool     header_confirmed = false;// 헤더패턴 + 내용검증(Reserved+Length+Instruction) 검증 여부
     const uint16_t HEADER_LEN = 3;   //  FF FF FD + byte stuffing 여부 바이트(FD면 byte-stuffing)
-    int      result           = COMM_FAIL; // 종류: COMM_SUCCESS, COMM_FAIL(default), [COMM_RX_CORRUPT, COMM_BUF_OVER, COMM_RX_TIMEOUT, COMM_CDC_ERR]
+    int      result           = COMM_FAIL; // 종류: COMM_SUCCESS, COMM_FAIL(default), [COMM_RX_CORRUPT, COMM_BUF_OVER, COMM_RX_TIMEOUT]
 
     while (true)
     {
@@ -125,13 +94,7 @@ static int rx_packet();
             result = COMM_BUF_OVER;
             break;
         }
-        esp_err_t ret = tinyusb_cdcacm_read(itf,&temp[rx_length],wait_length - rx_length,&rx_size); // 어느CDC,어디저장,최대저장바이트수,실제읽은 바이트 어디저장
-        if (ret != ESP_OK)
-        {
-            result = COMM_CDC_ERR;
-            break;
-        }
-
+        rx_size = uart_read_bytes(UART_PORT,&temp[rx_length],wait_length - rx_length,0);
         rx_length += rx_size;
         if (rx_length >= wait_length)
         {
@@ -214,7 +177,37 @@ static int rx_packet();
     return result;
 }
 
+
+void tx_task(void *arg)
+{
+    trajectory_t *trajectory = (trajectory_t *)arg;
+
+    while (true) {
+        if (trajectory->read_idx == trajectory->write_idx) {
+            vTaskDelay(pdMS_TO_TICKS(1));
+            continue;
+        }
+
+        joint_point_t *point = &trajectory->points[trajectory->read_idx];
+
+        uint32_t now_ms = esp_timer_get_time() / 1000;
+        uint32_t target_ms = point->time_ms;
+
+        if (target_ms > now_ms) {
+            vTaskDelay(pdMS_TO_TICKS(target_ms - now_ms));
+        }
+
+        motor_control.set_point(point);
+
+        uart_write_bytes(UART_PORT,packet,sizeof(packet));
+
+        trajectory->read_idx = (trajectory->read_idx + 1) % TRAJECTORY_BUFFER_SIZE;
+        trajectory->count += count;
+
+    }
+}
+
 static int tx_packet(int itf);
 {
-    
+   pass;
 }

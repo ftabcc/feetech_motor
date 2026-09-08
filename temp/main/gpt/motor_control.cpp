@@ -31,7 +31,7 @@ void init()
 
 }
 
-// 호출하면 하나씩 받도록 변경해야함. task로 작동되면 안됨.
+// 호출하면 하나씩 받도록 변경해야함. task로 작동되면 안됨. tx가 보내자마자 응답보낼거야.
 void rx_task(void *arg)
 {
     uart_event_t event;

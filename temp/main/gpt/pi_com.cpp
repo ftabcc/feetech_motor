@@ -30,27 +30,29 @@ static void pi_comm::rx_callback(int itf,cdcacm_event_t *event)
     result = pi_comm::rxpacket(itf);
     if (result != COMM_SUCCESS){
         pass;
-        // 통신결과에 따른 처리
+        // 통신실패에 따른 처리
     }
-    switch (packet->inst)
+    else
     {
-        case INST_READ:
-            read_packet(packet);
-            break;
+        switch (rxpacket.inst)
+        {
+            case INST_CONTROL:
+                inst::register_joint_trajectory(packet);
+                break;
 
-        case INST_WRITE:
-            write_packet(packet);
-            break;
+            case INST_WRITE:
+                write_packet(packet);
+                break;
 
-        case INST_STATUS:
-            send_status(packet);
-            break;
+            case INST_STATUS:
+                send_status(packet);
+                break;
 
-        default:
-            // 잘못된 instruction
-            break;
-    }
-    
+            default:
+                // 잘못된 instruction
+                break;
+        }
+    }    
 }
 
 int pi_comm::rx_packet(int itf)
@@ -174,8 +176,8 @@ int pi_comm::rx_packet(int itf)
 
 static int pi_comm::tx_packet(int itf)
 {
-    tinyusb_cdcacm_write_queue(TINYUSB_CDC_ACM_0,data,len);
-    tinyusb_cdcacm_write_flush(TINYUSB_CDC_ACM_0, 0);
+    tinyusb_cdcacm_write_queue(itf,data,len);
+    tinyusb_cdcacm_write_flush(itf, 0);
 }
 
 // CRC16bit(0x8005)

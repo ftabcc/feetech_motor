@@ -37,6 +37,7 @@ private:
     static int tx_packet(int itf);
 
 private:
+    waypoint_t waypoint;
 };
 
 

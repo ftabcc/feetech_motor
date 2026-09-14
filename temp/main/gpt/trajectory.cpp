@@ -54,13 +54,13 @@ bool generate_quintic_trajectory(const joint_point_t *p0,const joint_point_t *p1
     if (duration % CONTROL_PERIOD_MS != 0)
         return false;
 
-    size_t count = duration / CONTROL_PERIOD_MS + 1;
+    size_t count = duration / CONTROL_PERIOD_MS;
 
     if (count > TRAJECTORY_MAX_POINTS)
         return false;
     
     // without start point
-    for (size_t i = 1; i < count; i++) {
+    for (size_t i = 1; i < count + 1; i++) {
         uint32_t t_ms = i * CONTROL_PERIOD_MS;
         quintic_hermite(p0, p1, t_ms,&trajectory->points[trajectory->write_idx]);
         trajectory->write_idx = (trajectory->write_idx_idx + 1) % TRAJECTORY_BUFFER_SIZE;

@@ -272,6 +272,7 @@ void tx_packet(void *arg)
             uart_write_bytes(UART_PORT, (const char *)txpacket, idx);
         }
         // parse packet
+        // SCS.cpp참고
         if (rxpacket()){
 
         }

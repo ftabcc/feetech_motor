@@ -2,12 +2,7 @@
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
 
-#define UART_PORT       UART_NUM_1
-#define UART_TX_PIN     GPIO_NUM_17
-#define UART_RX_PIN     GPIO_NUM_18
-#define UART_BAUDRATE   115200
 
-static QueueHandle_t uart_queue;
 
 void init()
 {
@@ -177,7 +172,37 @@ static int rx_packet();
     return result;
 }
 
+//실시간 모터제어
+void motor_control_task(void *arg)
+{
+    trajectory_t *trajectory = (trajectory_t *)arg;
 
+    while (true) {
+        if (trajectory->read_idx == trajectory->write_idx) {
+            vTaskDelay(pdMS_TO_TICKS(1));
+            continue;
+        }
+
+        waypoint_t *point = &trajectory->points[trajectory->read_idx];
+
+        uint32_t now_ms = esp_timer_get_time() / 1000;
+        uint32_t target_ms = point->t_ms;
+
+        
+
+        // 너무 오래 지난건?
+        if (target_ms > now_ms) {
+            vTaskDelay(pdMS_TO_TICKS(target_ms - now_ms));
+        }
+
+        motor_control.set_point(point);
+
+        trajectory->read_idx = (trajectory->read_idx + 1) % TRAJECTORY_BUFFER_SIZE;
+        trajectory->count -= 1;
+    }
+}
+
+// 모터로 보낼 txpacket을 보내기만 함
 void tx_task(void *arg)
 {
     trajectory_t *trajectory = (trajectory_t *)arg;
@@ -203,11 +228,10 @@ void tx_task(void *arg)
 
         trajectory->read_idx = (trajectory->read_idx + 1) % TRAJECTORY_BUFFER_SIZE;
         trajectory->count += count;
-
     }
 }
 
 static int tx_packet(int itf);
 {
-   pass;
+    uart_write_bytes(UART_PORT,packet,sizeof(packet));
 }

@@ -1,6 +1,41 @@
 #include "trajectory.h"
 
-static void quintic_hermite(const joint_point_t *p0,const joint_point_t *p1,uint32_t t_ms,joint_point_t *point)
+bool register_trajectory(pi_rx_packet_t *rxpacket)
+{
+    if (rxpacket->len == 2 + JOINT_COUNT * (1 + 2 + 2 + 2)) // packet_data = TIME(2) + 12*[ACC(1) + POS(2) + MAX_TIME(2) + VEL(2)]
+        return false;
+    
+    // TIME(2)
+    p1->t_ms = ((uint16_t)rxpacket->data[0] << 8)|(uint16_t)rxpacket->data[1];
+
+    for (int i = 0; i < JOINT_COUNT; i++)
+    {
+        p1->a[i] = (float)rxpacket->data[2 + 12 * i]; // ACC(1)
+        p1->q[i] = (float)(((uint16_t)rxpacket->data[2 + 7 * i + 1] << 8) | (uint16_t)rxpacket->data[2 + 7 * i + 3]); // POS(2)
+        p1->v[i] = (float)(((uint16_t)rxpacket->data[2 + 7 * i + 6] << 8) | (uint16_t)rxpacket->data[2 + 7 * i + 7]); // VEL(2)
+        // point->max_time[i] = (float)(((uint16_t)rxpacket->data[2+7*i+3] << 8)|(uint16_t)rxpacket->data[2+7*i+4]); // MAX_TIME(2)
+    }
+
+    uint32_t duration = p1.t_ms - p0->t_ms;
+    if (duration % CONTROL_PERIOD_MS != 0) || (duration < 0)
+        return false;
+
+    size_t count = duration / CONTROL_PERIOD_MS;
+    if (count > TRAJECTORY_MAX_POINTS)
+        return false;
+
+    // without start point
+    for (size_t i = 1; i < count + 1; i++) {
+        uint32_t t_ms = i * CONTROL_PERIOD_MS;
+        quintic_hermite(t_ms,&trajectory->points[trajectory->write_idx]);
+        trajectory->write_idx = (trajectory->write_idx_idx + 1) % TRAJECTORY_BUFFER_SIZE;
+        trajectory->count += count;
+    }
+
+    return true;
+}
+
+static void quintic_hermite(uint32_t t_ms,joint_point_t *point)
 {
     float T = (float)(p1->time_ms - p0->time_ms) / 1000.0f;
     float t = (float)t_ms / 1000.0f;
@@ -39,33 +74,4 @@ static void quintic_hermite(const joint_point_t *p0,const joint_point_t *p1,uint
         point->v[i] = (dh0*p0->q[i] + dh1*p1->q[i] + dh2*T*p0->v[i] + dh3*T*p1->v[i] + dh4*T*T*p0->a[i] + dh5*T*T*p1->a[i]) / T;
         point->a[i] = (ddh0*p0->q[i] + ddh1*p1->q[i] + ddh2*T*p0->v[i] + ddh3*T*p1->v[i] + ddh4*T*T*p0->a[i] + ddh5*T*T*p1->a[i]) / (T*T);
     }
-}
-
-bool generate_quintic_trajectory(const joint_point_t *p0,const joint_point_t *p1,trajectory_t *trajectory)
-{
-    if (!p0 || !p1 || !trajectory)
-        return false;
-
-    if (p1->time_ms <= p0->time_ms)
-        return false;
-
-    uint32_t duration = p1->time_ms - p0->time_ms;
-
-    if (duration % CONTROL_PERIOD_MS != 0)
-        return false;
-
-    size_t count = duration / CONTROL_PERIOD_MS;
-
-    if (count > TRAJECTORY_MAX_POINTS)
-        return false;
-    
-    // without start point
-    for (size_t i = 1; i < count + 1; i++) {
-        uint32_t t_ms = i * CONTROL_PERIOD_MS;
-        quintic_hermite(p0, p1, t_ms,&trajectory->points[trajectory->write_idx]);
-        trajectory->write_idx = (trajectory->write_idx_idx + 1) % TRAJECTORY_BUFFER_SIZE;
-        trajectory->count += count;
-    }
-
-    return true;
 }

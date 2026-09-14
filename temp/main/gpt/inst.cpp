@@ -19,20 +19,16 @@ bool register_trajectory(pi_rx_packet_t *rxpacket)
     prev_point = waypoint;
     return true;
 }
+bool register_trajectory(pi_rx_packet_t *rxpacket)
 {
-    if (!p0 || !p1 || !trajectory)
-        return false;
-
-    if (p1->time_ms <= p0->time_ms)
+    if (rxpacket->len == 2 + JOINT_COUNT * (1 + 2 + 2 + 2)) // packet_data = TIME(2) + 12*[ACC(1) + POS(2) + MAX_TIME(2) + VEL(2)]
         return false;
 
     uint32_t duration = p1->time_ms - p0->time_ms;
-
-    if (duration % CONTROL_PERIOD_MS != 0)
+    if (duration % CONTROL_PERIOD_MS != 0) || (duration < 0)
         return false;
 
     size_t count = duration / CONTROL_PERIOD_MS;
-
     if (count > TRAJECTORY_MAX_POINTS)
         return false;
     

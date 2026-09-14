@@ -9,7 +9,7 @@
 #define TRAJECTORY_MAX_POINTS 100
 
 typedef struct {
-    uint32_t time_ms;
+    uint32_t t_ms;
     float q[JOINT_COUNT];
     float v[JOINT_COUNT];
     float a[JOINT_COUNT];
@@ -28,11 +28,12 @@ class trajectory
 {
 public:
     trajectory_t trajectory;
-    waypoint_t current_waypoint;
-    waypoint_t prev_waypoint;
+    waypoint_t p0;
+    waypoint_t p1;
 
 private:
-    bool generate_quintic_trajectory(const joint_point_t *p0,const joint_point_t *p1,trajectory_t *trajectory);
+    bool register_trajectory(pi_rx_packet_t *rxpacket)
+    static void quintic_hermite(uint32_t t_ms,joint_point_t *point)
 };
 
 #endif

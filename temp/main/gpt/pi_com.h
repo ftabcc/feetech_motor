@@ -6,9 +6,16 @@
 #include "tusb_cdc_acm.h"
 
 
+RXPACKET_MAX_LEN = 
+
+PKT_RESERVED = 
+PKT_LENGTH = 
+PKT_INSTRUCTION = 
+
+
 typedef struct
 {
-    size_t data_len;
+    size_t len;
     int inst;
     uint8_t data[PACKET_MAX_LEN];
     // int crc;
@@ -17,7 +24,7 @@ typedef struct
 
 typedef struct
 {
-    size_t data_len;
+    size_t len;
     int inst;
     int err; // for emergency stop
     uint8_t data[PACKET_MAX_LEN];
@@ -33,6 +40,7 @@ public:
 private:
     pi_rx_packet_t rxpacket;
     pi_tx_packet_t txpacket;
+
 private:
     static void rx_callback(int itf,cdcacm_event_t *event);
     int rx_packet(int itf);

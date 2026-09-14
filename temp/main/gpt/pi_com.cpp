@@ -36,7 +36,7 @@ static void pi_comm::rx_callback(int itf,cdcacm_event_t *event)
     {
         switch (rxpacket.inst)
         {
-            case INST_CONTROL:
+            case INST_REGISTER_TRAJECTORY:
                 inst::register_joint_trajectory(packet);
                 break;
 

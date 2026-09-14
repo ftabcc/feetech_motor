@@ -23,6 +23,7 @@ void init()
     // read task
     xTaskCreate(rx_task,"rx_task",4096,NULL,10,NULL);
     // write task
+    x
 
 }
 
@@ -181,21 +182,57 @@ void motor_control_task(void *arg)
         if (trajectory->read_idx == trajectory->write_idx) {
             vTaskDelay(pdMS_TO_TICKS(1));
             continue;
+        }// need to change 
+
+        waypoint_t *p = &trajectory->points[trajectory->read_idx];
+
+        // HEAD(0xFF 0xFF) + ID(1) + LEN(1) + INST(1) + DATA(N) + CHECK_SUM(1) = N+6(N>=0)
+        size_t idx = 0;
+        txpacket[idx++] = '0xff'; // header 0
+        txpacket[idx++] = '0xff'; // header 1
+        txpacket[idx++] = '0xfe'; // brodcast id
+        txpacket[idx++] = '0x56'; // LEN = 86
+        txpacket[idx++] = '0x83'; // INST = SYNC_WRITE
+        for (int i = 0; i < JOINT_COUNT; i++)
+        {
+            // ACC (1 byte)
+            txpacket[idx++] = (uint8_t)p->a[i];
+
+            // POS (2 bytes)
+            uint16_t q = (uint16_t)p->q[i];
+            txpacket[idx++] = (uint8_t)(q >> 8);
+            txpacket[idx++] = (uint8_t)q;
+
+            // MAX_TIME (2 bytes)
+            txpacket[idx++] = 0;
+            txpacket[idx++] = 0;
+
+            // VEL (2 bytes)
+            uint16_t v = (uint16_t)p->v[i];
+            txpacket[idx++] = (uint8_t)(v >> 8);
+            txpacket[idx++] = (uint8_t)v;
         }
 
-        waypoint_t *point = &trajectory->points[trajectory->read_idx];
+        uint8_t sum = 0;
+        for (int i = 2; i < idx;)
+            {sum += txpacket[i];}
+        txpacket[idx] = ~sum; // check_sum = ~(ID + Len + INST + DATA)
 
         uint32_t now_ms = esp_timer_get_time() / 1000;
         uint32_t target_ms = point->t_ms;
-
-        
-
-        // 너무 오래 지난건?
-        if (target_ms > now_ms) {
-            vTaskDelay(pdMS_TO_TICKS(target_ms - now_ms));
+        uint32_t dt = target_ms - now_ms;
+        if (dt > 0) {
+            vTaskDelay(pdMS_TO_TICKS(target_ms - now_ms)); //vTaskDelayUntil() for 일정주기.
+        }
+        else if(dt < -20){
+            pass // 너무 오래 지난건?
+        }
+        else{
+            pass
         }
 
-        motor_control.set_point(point);
+        int packet_len = idx;
+        uart_write_bytes(UART_PORT,txpacket,packet_len);
 
         trajectory->read_idx = (trajectory->read_idx + 1) % TRAJECTORY_BUFFER_SIZE;
         trajectory->count -= 1;
@@ -229,9 +266,4 @@ void tx_task(void *arg)
         trajectory->read_idx = (trajectory->read_idx + 1) % TRAJECTORY_BUFFER_SIZE;
         trajectory->count += count;
     }
-}
-
-static int tx_packet(int itf);
-{
-    uart_write_bytes(UART_PORT,packet,sizeof(packet));
 }

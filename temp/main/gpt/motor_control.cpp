@@ -174,7 +174,7 @@ static int rx_packet();
 }
 
 //실시간 모터제어
-void motor_control_task(void *arg)
+void tx_packet(void *arg)
 {
     trajectory_t *trajectory = (trajectory_t *)arg;
 
@@ -236,34 +236,16 @@ void motor_control_task(void *arg)
 
         trajectory->read_idx = (trajectory->read_idx + 1) % TRAJECTORY_BUFFER_SIZE;
         trajectory->count -= 1;
+
+        // control 명령응답확인
+        if (retrun_response){
+            rx_packet()
+        }
+
+
+
     }
 }
 
-// 모터로 보낼 txpacket을 보내기만 함
-void tx_task(void *arg)
-{
-    trajectory_t *trajectory = (trajectory_t *)arg;
-
-    while (true) {
-        if (trajectory->read_idx == trajectory->write_idx) {
-            vTaskDelay(pdMS_TO_TICKS(1));
-            continue;
-        }
-
-        joint_point_t *point = &trajectory->points[trajectory->read_idx];
-
-        uint32_t now_ms = esp_timer_get_time() / 1000;
-        uint32_t target_ms = point->time_ms;
-
-        if (target_ms > now_ms) {
-            vTaskDelay(pdMS_TO_TICKS(target_ms - now_ms));
-        }
-
-        motor_control.set_point(point);
-
-        uart_write_bytes(UART_PORT,packet,sizeof(packet));
-
-        trajectory->read_idx = (trajectory->read_idx + 1) % TRAJECTORY_BUFFER_SIZE;
-        trajectory->count += count;
-    }
-}
+// 하달받은 모터통신패킷전달함수도 필요함
+// void tx_packet()

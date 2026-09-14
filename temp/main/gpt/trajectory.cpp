@@ -29,6 +29,7 @@ bool register_trajectory(pi_rx_packet_t *rxpacket)
         uint32_t t_ms = i * CONTROL_PERIOD_MS;
         quintic_hermite(t_ms,&trajectory->points[trajectory->write_idx]);
         trajectory->write_idx = (trajectory->write_idx_idx + 1) % TRAJECTORY_BUFFER_SIZE;
+        // 만약 write가 너무 빨라서 read idx넘을수도있을텐데?
         trajectory->count += count;
     }
     return true;

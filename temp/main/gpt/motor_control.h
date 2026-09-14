@@ -20,10 +20,20 @@
 // } esp2motor_packet_t;
 // HEAD(0xFF 0xFF) + ID(1) + LEN(1) + INST(1) + DATA(N) + CHECK_SUM(1) = N+6(N>=0)
 
+
+typedef struct {
+    uint32_t t_ms;
+    float q[JOINT_COUNT];
+    float v[JOINT_COUNT];
+    float a[JOINT_COUNT];
+    //uint16_t max_time[12];
+} state_point_t;// packet_data(86) = TIME(2) + 12*[ACC(1) + POS(2) + MAX_TIME(2) + VEL(2)]
+
+
 typedef struct
 {
+    int id;
     size_t len;
-    int inst;
     int err; // for emergency stop
     uint8_t data[PACKET_MAX_LEN];
     int crc;

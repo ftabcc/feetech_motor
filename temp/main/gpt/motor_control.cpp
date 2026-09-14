@@ -66,6 +66,7 @@ void rx_task(void *arg)
     }
 }
 
+// st3215-hs rx_packet
 static int rx_packet();
 {
     const uint16_t min_length       = 11;   // temp버퍼의 프로토콜 구조상 될 수 있는 최소 길이
@@ -271,11 +272,18 @@ void tx_packet(void *arg)
 
             uart_write_bytes(UART_PORT, (const char *)txpacket, idx);
         }
-        // parse packet
-        // SCS.cpp참고
-        if (rxpacket()){
-
+        // parse packet, SCS.cpp참고
+        for (int i = 0; i < JOINT_COUNT; i++){
+            if (rxpacket()){
+                p.a[rxpacket.id] = rxpacket.data[5+1];
+                p.q[rxpacket.id] = (float)(((uint16_t)rxpacket->data[5+2] << 8) | (uint16_t)rxpacket->data[5+3]);
+                p.v[rxpacket.id] = (float)(((uint16_t)rxpacket->data[5+6] << 8) | (uint16_t)rxpacket->data[5+7]);
+            }
+            else{
+                // sync_read_err
+            }
         }
+        
     }
 }
 

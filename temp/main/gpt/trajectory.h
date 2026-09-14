@@ -24,7 +24,7 @@ typedef struct {
 } trajectory_t;
 
 
-class trajectory
+class Trajectory
 {
 public:
     trajectory_t trajectory;

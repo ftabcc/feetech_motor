@@ -173,28 +173,41 @@ static int rx_packet();
     return result;
 }
 
-//실시간 모터제어
+// motor_task
 void tx_packet(void *arg)
 {
     trajectory_t *trajectory = (trajectory_t *)arg;
 
-    while (true) {
-        if (trajectory->read_idx == trajectory->write_idx) {
-            vTaskDelay(pdMS_TO_TICKS(1));
+    TickType_t last_wake_time = xTaskGetTickCount();
+    const TickType_t control_period = pdMS_TO_TICKS(CONTROL_PERIOD_MS);
+    read_every = READ_PERIOD_MS / CONTROL_PERIOD_MS;  // 5
+    uint32_t control_count = 0;
+
+    while (true)
+    {
+        // Run at fixed period
+        vTaskDelayUntil(&last_wake_time, control_period);
+        if (trajectory->read_idx == trajectory->write_idx)
+        {
             continue;
-        }// need to change 
+        }//notify 필요한가?
 
         waypoint_t *p = &trajectory->points[trajectory->read_idx];
-
-        // HEAD(0xFF 0xFF) + ID(1) + LEN(1) + INST(1) + DATA(N) + CHECK_SUM(1) = N+6(N>=0)
+        // HEAD(2) + ID(1) + LEN(1) + INST(1) + DATA(84) + CHECKSUM(1)
         size_t idx = 0;
-        txpacket[idx++] = '0xff'; // header 0
-        txpacket[idx++] = '0xff'; // header 1
-        txpacket[idx++] = '0xfe'; // brodcast id
-        txpacket[idx++] = '0x56'; // LEN = 86
-        txpacket[idx++] = '0x83'; // INST = SYNC_WRITE
+        txpacket[idx++] = 0xFF;  // Header0
+        txpacket[idx++] = 0xFF;  // Header1
+        txpacket[idx++] = 0xFE;  // Broadcast ID
+        txpacket[idx++] = 0x64;  // LEN: 1 + 2 + 12*8 + 1 = 100
+        txpacket[idx++] = 0x83;  // INST: SYNC_WRITE
+
+        txpacket[idx++] = 0x29;  // DATA0: start address
+        txpacket[idx++] = 0x08;  // DATA1: each id's data len
         for (int i = 0; i < JOINT_COUNT; i++)
         {
+            // ID (1 byte)
+            txpacket[idx++] = (uint8_t)i;
+
             // ACC (1 byte)
             txpacket[idx++] = (uint8_t)p->a[i];
 
@@ -213,37 +226,55 @@ void tx_packet(void *arg)
             txpacket[idx++] = (uint8_t)v;
         }
 
+        // CHECKSUM = ~(ID + LEN + INST + DATA)
         uint8_t sum = 0;
-        for (int i = 2; i < idx;)
-            {sum += txpacket[i];}
-        txpacket[idx] = ~sum; // check_sum = ~(ID + Len + INST + DATA)
+        for (size_t i = 2; i < idx; i++)
+        {
+            sum += txpacket[i];
+        }
+        txpacket[idx++] = ~sum;
 
-        uint32_t now_ms = esp_timer_get_time() / 1000;
-        uint32_t target_ms = point->t_ms;
-        uint32_t dt = target_ms - now_ms;
-        if (dt > 0) {
-            vTaskDelay(pdMS_TO_TICKS(target_ms - now_ms)); //vTaskDelayUntil() for 일정주기.
-        }
-        else if(dt < -20){
-            pass // 너무 오래 지난건?
-        }
-        else{
-            pass
-        }
-
-        int packet_len = idx;
-        uart_write_bytes(UART_PORT,txpacket,packet_len);
+        uart_write_bytes(UART_PORT, (const char *)txpacket, idx);
 
         trajectory->read_idx = (trajectory->read_idx + 1) % TRAJECTORY_BUFFER_SIZE;
-        trajectory->count -= 1;
+        trajectory->count--;
 
-        // control 명령응답확인
-        if (retrun_response){
-            rx_packet()
+        // Check response
+        if (return_response)
+        {
+            rx_packet();
         }
 
+        control_count++;
+        if (control_count >= read_every)
+        {
+            control_count = 0;
+            // HEAD(2) + ID(1) + LEN(1) + INST(1) + DATA(84) + CHECKSUM(1)
+            size_t idx = 0;
+            txpacket[idx++] = 0xFF;  // Header0
+            txpacket[idx++] = 0xFF;  // Header1
+            txpacket[idx++] = 0xFE;  // Broadcast ID
+            txpacket[idx++] = 0x64;  // LEN: 1 + 2 + 12*8 + 1 = 100
+            txpacket[idx++] = 0x82;  // INST: SYNC_READ
 
+            txpacket[idx++] = 0x29;  // DATA0: start address
+            txpacket[idx++] = 0x07;  // DATA1: how many bytes read
+            for (int i = 0; i < JOINT_COUNT; i++)
+            {txpacket[idx++] = (uint8_t)i;}
+            // CHECKSUM = ~(ID + LEN + INST + DATA)
+            uint8_t sum = 0;
+            for (size_t i = 2; i < idx; i++)
+            {
+                sum += txpacket[i];
+            }
+            txpacket[idx++] = ~sum;
 
+            uart_write_bytes(UART_PORT, (const char *)txpacket, idx);
+        }
+        // parse packet
+        if (rxpacket()){
+
+        }
     }
 }
 

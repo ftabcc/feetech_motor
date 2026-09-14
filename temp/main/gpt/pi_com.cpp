@@ -37,15 +37,15 @@ static void pi_comm::rx_callback(int itf,cdcacm_event_t *event)
         switch (rxpacket.inst)
         {
             case INST_REGISTER_TRAJECTORY:
-                inst::register_trajectory(packet);
+                Trajectory::register_trajectory(rxpacket);
                 break;
 
             case INST_WRITE:
-                write_packet(packet);
+                write_packet(rxpacket);
                 break;
 
             case INST_STATUS:
-                send_status(packet);
+                send_status(rxpacket);
                 break;
 
             default:

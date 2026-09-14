@@ -25,12 +25,14 @@ bool register_trajectory(pi_rx_packet_t *rxpacket)
         return false;
 
     // without start point
-    for (size_t i = 1; i < count + 1; i++) {
+    for (size_t i = 1; i <= count; i++){
+        if (trajectory->count >= TRAJECTORY_BUFFER_SIZE)
+        {return false;}  // Buffer full
+        // 만약 write가 너무 빨라서 read idx넘을수도있을텐데?
         uint32_t t_ms = i * CONTROL_PERIOD_MS;
         quintic_hermite(t_ms,&trajectory->points[trajectory->write_idx]);
-        trajectory->write_idx = (trajectory->write_idx_idx + 1) % TRAJECTORY_BUFFER_SIZE;
-        // 만약 write가 너무 빨라서 read idx넘을수도있을텐데?
-        trajectory->count += count;
+        trajectory->write_idx = (trajectory->write_idx + 1) % TRAJECTORY_BUFFER_SIZE;
+        trajectory->count++;
     }
     return true;
 }

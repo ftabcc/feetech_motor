@@ -28,6 +28,7 @@ void init()
 }
 
 // 호출하면 하나씩 받도록 변경해야함. task로 작동되면 안됨. tx가 보내자마자 응답보낼거야.
+// 위처럼 생각했으나, 모터 컨트롤 task안에서 syncread하기엔 너무 오래걸릴듯. state read task를 따로 운영해야할듯
 void rx_task(void *arg)
 {
     uart_event_t event;
@@ -236,16 +237,16 @@ void tx_packet(void *arg)
         txpacket[idx++] = ~sum;
 
         uart_write_bytes(UART_PORT, (const char *)txpacket, idx);
-
         trajectory->read_idx = (trajectory->read_idx + 1) % TRAJECTORY_BUFFER_SIZE;
         trajectory->count--;
 
-        // Check response
+        // motor_control response
         if (return_response)
         {
             rx_packet();
         }
 
+        // READ_STATE
         control_count++;
         if (control_count >= read_every)
         {
@@ -271,19 +272,22 @@ void tx_packet(void *arg)
             txpacket[idx++] = ~sum;
 
             uart_write_bytes(UART_PORT, (const char *)txpacket, idx);
-        }
-        // parse packet, SCS.cpp참고
-        for (int i = 0; i < JOINT_COUNT; i++){
-            if (rxpacket()){
-                p.a[rxpacket.id] = rxpacket.data[5+1];
-                p.q[rxpacket.id] = (float)(((uint16_t)rxpacket->data[5+2] << 8) | (uint16_t)rxpacket->data[5+3]);
-                p.v[rxpacket.id] = (float)(((uint16_t)rxpacket->data[5+6] << 8) | (uint16_t)rxpacket->data[5+7]);
-            }
-            else{
-                // sync_read_err
+
+            // parse packet, SCS.cpp참고
+            for (int i = 0; i < JOINT_COUNT; i++){
+                if (rxpacket()){
+                    p.a[rxpacket.id] = rxpacket.data[5+1];
+                    p.q[rxpacket.id] = (float)(((uint16_t)rxpacket->data[5+2] << 8) | (uint16_t)rxpacket->data[5+3]);
+                    p.v[rxpacket.id] = (float)(((uint16_t)rxpacket->data[5+6] << 8) | (uint16_t)rxpacket->data[5+7]);
+                }
+                else{
+                    // sync_read_err
+                }
             }
         }
         
+        // 호출하면 하나씩 받도록 변경해야함. task로 작동되면 안됨. tx가 보내자마자 응답보낼거야.
+        // 위처럼 생각했으나, 모터 컨트롤 task안에서 syncread하기엔 너무 오래걸릴듯. state read task를 따로 운영해야할듯
     }
 }
 

@@ -21,23 +21,27 @@ static void pi_comm::init(void *arg)
     };
 
     ESP_ERROR_CHECK(tinyusb_cdcacm_init(&acm_cfg));
-    // ESP_LOGI(TAG, "USB initialization DONE");
+
+    TaskHandle_t packet_process_task_handle = nullptr;
+    xTaskCreate(packet_process_task, "packet_process", 4096, nullptr, 10, &packet_process_task_handle);
 }
 
-static void pi_comm::rx_callback(int itf,cdcacm_event_t *event)
+void packet_process_task(void *arg)
 {
-    (void)event;
-    result = pi_comm::rxpacket(itf); // 패킷수신까지만 callback안에 넣고, notify하는게 나은
-    // 통신실패에 따른 처리
-    switch (result)
+    while (true)
     {
-        case COMM_SUCCESS:
+        // Wait until at least one packet is available
+        ulTaskNotifyTake(pdTRUE, portMAX_DELAY);
+        // Process all queued packets
+        while (rxpacket_buffer.count > 0)
         {
-            switch (rxpacket.inst)
+            pi2esp_packet_t &packet = rxpacket_buffer.packets[rxpacket_buffer.read_idx];
+            switch (packet.inst)
             {
                 case INST_REGISTER_TRAJECTORY:
                 {
-                    trajectory_err_t err = trajectory.register_trajectory(rxpacket);
+                    trajectory_err_t err = trajectory.register_trajectory(packet);
+
                     switch (err)
                     {
                         case trajectory_err_t::SUCCESS:
@@ -52,17 +56,34 @@ static void pi_comm::rx_callback(int itf,cdcacm_event_t *event)
                     break;
                 }
                 case INST_WRITE:
-                    write_packet(rxpacket);
+                    write_packet(packet);
                     break;
-
                 case INST_STATUS:
-                    send_status(rxpacket);
+                    send_status(packet);
                     break;
-
                 default:
-                    // 잘못된 instruction
+                    // Invalid instruction
                     break;
             }
+            rxpacket_buffer.read_idx = (rxpacket_buffer.read_idx + 1) % PACKET_BUFFER_SIZE;
+            rxpacket_buffer.count--;
+        }
+    }
+}
+
+static void pi_comm::rx_callback(int itf,cdcacm_event_t *event)
+{
+    (void)event;
+    result = pi_comm::rxpacket(itf); // 패킷수신까지만 callback안에 넣고, notify하는게 나은
+    // 통신실패에 따른 처리
+    switch (result)
+    {
+        case COMM_SUCCESS:
+        {
+            rxpacket_buffer.packets[rxpacket_buffer.write_idx] = rxpacket;
+            rxpacket_buffer.write_idx = (rxpacket_buffer.write_idx + 1) % PACKET_BUFFER_SIZE;
+            rxpacket_buffer.count++;
+            xTaskNotifyGive(packet_process_task_handle);
         }
         case COMM_FAIL:
             break;

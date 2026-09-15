@@ -41,6 +41,15 @@ typedef struct
 // HEAD(0xFF 0xFF) + ID(1) + LEN(1) + ERR(1) + DATA(N) + CHECK_SUM(1) = N+6(N>=0)
 
 
+enum class trajectory_err_t
+{
+    SUCCESS = 0,
+    INVALID_LENGTH = 1,
+    INVALID_DURATION = 2,
+    BUFFER_FULL = 3
+};
+
+
 class motor_comm
 {
 public:

@@ -26,51 +26,6 @@ static void pi_comm::init(void *arg)
     xTaskCreate(packet_process_task, "packet_process", 4096, nullptr, 10, &packet_process_task_handle);
 }
 
-void packet_process_task(void *arg)
-{
-    while (true)
-    {
-        // Wait until at least one packet is available
-        ulTaskNotifyTake(pdTRUE, portMAX_DELAY);
-        // Process all queued packets
-        while (rxpacket_buffer.count > 0)
-        {
-            pi2esp_packet_t &packet = rxpacket_buffer.packets[rxpacket_buffer.read_idx];
-            switch (packet.inst)
-            {
-                case INST_REGISTER_TRAJECTORY:
-                {
-                    trajectory_err_t err = trajectory.register_trajectory(packet);
-
-                    switch (err)
-                    {
-                        case trajectory_err_t::SUCCESS:
-                            break;
-                        case trajectory_err_t::INVALID_LENGTH:
-                            break;
-                        case trajectory_err_t::INVALID_DURATION:
-                            break;
-                        case trajectory_err_t::BUFFER_FULL:
-                            break;
-                    }
-                    break;
-                }
-                case INST_WRITE:
-                    write_packet(packet);
-                    break;
-                case INST_STATUS:
-                    send_status(packet);
-                    break;
-                default:
-                    // Invalid instruction
-                    break;
-            }
-            rxpacket_buffer.read_idx = (rxpacket_buffer.read_idx + 1) % PACKET_BUFFER_SIZE;
-            rxpacket_buffer.count--;
-        }
-    }
-}
-
 static void pi_comm::rx_callback(int itf,cdcacm_event_t *event)
 {
     (void)event;
@@ -217,6 +172,50 @@ int pi_comm::rx_packet(int itf)
 
     port->is_using_ = false;
     return result;
+}
+
+static void packet_process_task(void *arg)
+{
+    pi_comm *self = static_cast<pi_comm *>(arg);
+    while (true)
+    {
+        ulTaskNotifyTake(pdTRUE, portMAX_DELAY);    // Wait until at least one packet is available
+        while (rxpacket_buffer.count > 0)   // Process all queued packets
+        {
+            pi2esp_packet_t &packet = rxpacket_buffer.packets[rxpacket_buffer.read_idx];
+            switch (packet.inst)
+            {
+                case INST_REGISTER_TRAJECTORY:
+                {
+                    trajectory_err_t err = trajectory.register_trajectory(packet);
+
+                    switch (err)
+                    {
+                        case trajectory_err_t::SUCCESS:
+                            break;
+                        case trajectory_err_t::INVALID_LENGTH:
+                            break;
+                        case trajectory_err_t::INVALID_DURATION:
+                            break;
+                        case trajectory_err_t::BUFFER_FULL:
+                            break;
+                    }
+                    break;
+                }
+                case INST_WRITE:
+                    write_packet(packet);
+                    break;
+                case INST_STATUS:
+                    send_status(packet);
+                    break;
+                default:
+                    // Invalid instruction
+                    break;
+            }
+            rxpacket_buffer.read_idx = (rxpacket_buffer.read_idx + 1) % PACKET_BUFFER_SIZE;
+            rxpacket_buffer.count--;
+        }
+    }
 }
 
 static int pi_comm::tx_packet(int itf)

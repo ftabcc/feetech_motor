@@ -49,7 +49,6 @@ enum class trajectory_err_t
     BUFFER_FULL = 3
 };
 
-
 class motor_comm
 {
 public:
@@ -66,6 +65,5 @@ private:
     waypoint_t waypoint;
     static QueueHandle_t uart_queue;
 };
-
 
 #endif

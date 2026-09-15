@@ -2,8 +2,6 @@
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
 
-
-
 void init()
 {
     const uart_config_t uart_config = {

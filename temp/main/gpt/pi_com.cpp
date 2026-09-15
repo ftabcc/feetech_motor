@@ -188,7 +188,6 @@ static void packet_process_task(void *arg)
                 case INST_REGISTER_TRAJECTORY:
                 {
                     trajectory_err_t err = trajectory.register_trajectory(packet);
-
                     switch (err)
                     {
                         case trajectory_err_t::SUCCESS:
@@ -205,8 +204,7 @@ static void packet_process_task(void *arg)
                 case INST_WRITE:
                     write_packet(packet);
                     break;
-                case INST_STATUS:
-                    send_status(packet);
+                case INST_STOP:
                     break;
                 default:
                     // Invalid instruction

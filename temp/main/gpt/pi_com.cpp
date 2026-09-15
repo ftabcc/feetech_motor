@@ -6,6 +6,8 @@
 #include "tinyusb.h"
 #include "tusb_cdc_acm.h"
 
+pi_comm pi_comm_instance;
+
 static void pi_comm::init(void *arg)
 {
     // ESP_LOGI(TAG, "USB initialization");
@@ -35,9 +37,9 @@ static void pi_comm::rx_callback(int itf,cdcacm_event_t *event)
     {
         case COMM_SUCCESS:
         {
-            rxpacket_buffer.packets[rxpacket_buffer.write_idx] = rxpacket;
-            rxpacket_buffer.write_idx = (rxpacket_buffer.write_idx + 1) % PACKET_BUFFER_SIZE;
-            rxpacket_buffer.count++;
+            pi_comm_instance.rxpacket_buffer.packets[pi_comm_instance.rxpacket_buffer.write_idx] = rxpacket;
+            pi_comm_instance.rxpacket_buffer.write_idx = (pi_comm_instance.rxpacket_buffer.write_idx + 1) % PACKET_BUFFER_SIZE;
+            pi_comm_instance.rxpacket_buffer.count++;
             xTaskNotifyGive(packet_process_task_handle);
         }
         case COMM_FAIL:

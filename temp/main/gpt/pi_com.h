@@ -71,6 +71,5 @@ private:
     Trajectory trajectory;
 };
 
-
-
+extern pi_comm pi_comm_instance;
 #endif

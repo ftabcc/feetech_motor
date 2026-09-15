@@ -9,6 +9,13 @@
 #define INST_STOP                 0x02
 #define INST_CLEAR_TRAJECTORY     0x03
 
+#define COMM_SUCCESS        0
+#define COMM_FAIL           1
+#define COMM_RX_CORRUPT     2
+#define COMM_BUF_OVER       3
+#define COMM_RX_TIMEOUT     4
+#define COMM_CDC_ERR        5
+
 RXPACKET_MAX_LEN = 
 
 PKT_RESERVED = 

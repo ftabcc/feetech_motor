@@ -31,6 +31,20 @@ static void pi_comm::rx_callback(int itf,cdcacm_event_t *event)
     if (result != COMM_SUCCESS){
         pass;
         // 통신실패에 따른 처리
+        switch (result)
+        {
+            case COMM_FAIL:
+                break;
+            case COMM_BUF_OVER:
+                break; // pi로 전달
+            case COMM_RX_CORRUPT:
+                break; // 단순히 다음 패킷 기다리기
+            case COMM_RX_TIMEOUT:
+                break; // 단순히 다음 패킷 기다리기
+            case COMM_CDC_ERR:
+                break; // cdc실패 단순 pi로 전달.
+        }
+        tx_packet() // pi로 에러 전달
     }
     else
     {
@@ -57,10 +71,10 @@ static void pi_comm::rx_callback(int itf,cdcacm_event_t *event)
 
 int pi_comm::rx_packet(int itf)
 {
-    const uint16_t min_length       = 11;   // temp버퍼의 프로토콜 구조상 될 수 있는 최소 길이
+    const uint16_t min_length       = 11;   // 프로토콜 구조상 될 수 있는 패킷의 최소 길이
     const uint16_t max_length = 255;    // temp버퍼의 최대 길이
-    uint16_t real_len = 0;              // packet의 실제 길이
     uint8_t temp[max_length];  // rx패킷을 찾기전에 잠시 저장하는 공간.
+    uint16_t real_len = 0;              // packet의 실제 길이
 
     size_t rx_size            = 0;     // cdc로 이번에 실제로 읽은 바이트 수
     uint16_t rx_length        = 0;    // 현재 temp버퍼 바이트 수

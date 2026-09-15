@@ -110,7 +110,7 @@ static int rx_packet();
                         break;
                     }
                     idx = (uint16_t)(p - temp);
-                    if ((temp[idx + 1] == 0xFF) &&(temp[idx + 2] == 0xFD) &&(temp[idx + 3] != 0xFD))
+                    if ((temp[idx + 1] == 0xFF) && (temp[idx + 3] != 0xFD))
                     {
                         found = true;
                         break;
@@ -126,7 +126,7 @@ static int rx_packet();
                 
                 if (found) // 헤더패턴 확인
                 {
-                if (temp[idx + PKT_RESERVED] != 0x00 || temp[idx + PKT_LENGTH] > RXPACKET_MAX_LEN || temp[idx + PKT_INSTRUCTION] != 0x55) // 내용 검증
+                if (temp[idx + PKT_LENGTH] > RXPACKET_MAX_LEN) // 내용 검증
                 {
                     wait_length += HEADER_LEN;
                     idx += HEADER_LEN; // 헤더가 될수없는 범위에 대하여 skip
@@ -285,9 +285,6 @@ void tx_packet(void *arg)
                 }
             }
         }
-        
-        // 호출하면 하나씩 받도록 변경해야함. task로 작동되면 안됨. tx가 보내자마자 응답보낼거야.
-        // 위처럼 생각했으나, 모터 컨트롤 task안에서 syncread하기엔 너무 오래걸릴듯. state read task를 따로 운영해야할듯
     }
 }
 

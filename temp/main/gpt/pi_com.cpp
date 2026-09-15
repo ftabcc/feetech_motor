@@ -27,46 +27,56 @@ static void pi_comm::init(void *arg)
 static void pi_comm::rx_callback(int itf,cdcacm_event_t *event)
 {
     (void)event;
-    result = pi_comm::rxpacket(itf);
-    if (result != COMM_SUCCESS){
-        pass;
-        // 통신실패에 따른 처리
-        switch (result)
-        {
-            case COMM_FAIL:
-                break;
-            case COMM_BUF_OVER:
-                break; // pi로 전달
-            case COMM_RX_CORRUPT:
-                break; // 단순히 다음 패킷 기다리기
-            case COMM_RX_TIMEOUT:
-                break; // 단순히 다음 패킷 기다리기
-            case COMM_CDC_ERR:
-                break; // cdc실패 단순 pi로 전달.
-        }
-        tx_packet() // pi로 에러 전달
-    }
-    else
+    result = pi_comm::rxpacket(itf); // 패킷수신까지만 callback안에 넣고, notify하는게 나은
+    // 통신실패에 따른 처리
+    switch (result)
     {
-        switch (rxpacket.inst)
+        case COMM_SUCCESS:
         {
-            case INST_REGISTER_TRAJECTORY:
-                Trajectory::register_trajectory(rxpacket);
-                break;
+            switch (rxpacket.inst)
+            {
+                case INST_REGISTER_TRAJECTORY:
+                {
+                    trajectory_err_t err = trajectory.register_trajectory(rxpacket);
+                    switch (err)
+                    {
+                        case trajectory_err_t::SUCCESS:
+                            break;
+                        case trajectory_err_t::INVALID_LENGTH:
+                            break;
+                        case trajectory_err_t::INVALID_DURATION:
+                            break;
+                        case trajectory_err_t::BUFFER_FULL:
+                            break;
+                    }
+                    break;
+                }
+                case INST_WRITE:
+                    write_packet(rxpacket);
+                    break;
 
-            case INST_WRITE:
-                write_packet(rxpacket);
-                break;
+                case INST_STATUS:
+                    send_status(rxpacket);
+                    break;
 
-            case INST_STATUS:
-                send_status(rxpacket);
-                break;
-
-            default:
-                // 잘못된 instruction
-                break;
+                default:
+                    // 잘못된 instruction
+                    break;
+            }
         }
-    }    
+        case COMM_FAIL:
+            break;
+        case COMM_BUF_OVER:
+            break; // pi로 전달
+        case COMM_RX_CORRUPT:
+            break; // 단순히 다음 패킷 기다리기
+        case COMM_RX_TIMEOUT:
+            break; // 단순히 다음 패킷 기다리기
+        case COMM_CDC_ERR:
+            break; // cdc실패 단순 pi로 전달.
+    }
+    tx_packet() // pi로 에러 전달
+    
 }
 
 int pi_comm::rx_packet(int itf)

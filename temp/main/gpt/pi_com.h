@@ -55,6 +55,8 @@ private:
     static void rx_callback(int itf,cdcacm_event_t *event);
     int rx_packet(int itf);
     uint16_t updateCRC(uint16_t start, uint8_t *addr, uint16_t size);
+
+    Trajectory trajectory;
 };
 
 

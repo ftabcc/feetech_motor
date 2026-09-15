@@ -1,40 +1,42 @@
 #include "trajectory.h"
 
-bool register_trajectory(pi_rx_packet_t *rxpacket)
+trajectory_err_t register_trajectory(pi_rx_packet_t *rxpacket)
 {
-    if (rxpacket->len == 2 + JOINT_COUNT * (1 + 2 + 2 + 2)) // packet_data = TIME(2) + 12*[ACC(1) + POS(2) + MAX_TIME(2) + VEL(2)]
-        return false;
+    if (rxpacket->len != 2 + JOINT_COUNT * (1 + 2 + 2 + 2)) // packet_data(84) = TIME(2) + 12*[ACC(1) + POS(2) + MAX_TIME(2) + VEL(2)]
+        return trajectory_err_t::INVALID_LENGTH;
     
     // TIME(2)
-    p1->t_ms = ((uint16_t)rxpacket->data[0] << 8)|(uint16_t)rxpacket->data[1];
+    p1.t_ms = ((uint16_t)rxpacket->data[0] << 8)|(uint16_t)rxpacket->data[1];
 
     for (int i = 0; i < JOINT_COUNT; i++)
     {
-        p1->a[i] = (float)rxpacket->data[2 + 12 * i]; // ACC(1)
-        p1->q[i] = (float)(((uint16_t)rxpacket->data[2 + 7 * i + 1] << 8) | (uint16_t)rxpacket->data[2 + 7 * i + 3]); // POS(2)
-        p1->v[i] = (float)(((uint16_t)rxpacket->data[2 + 7 * i + 6] << 8) | (uint16_t)rxpacket->data[2 + 7 * i + 7]); // VEL(2)
+        p1.a[i] = (float)rxpacket->data[2 + 12 * i]; // ACC(1)
+        p1.q[i] = (float)(((uint16_t)rxpacket->data[2 + 7 * i + 1] << 8) | (uint16_t)rxpacket->data[2 + 7 * i + 3]); // POS(2)
+        p1.v[i] = (float)(((uint16_t)rxpacket->data[2 + 7 * i + 6] << 8) | (uint16_t)rxpacket->data[2 + 7 * i + 7]); // VEL(2)
         // point->max_time[i] = (float)(((uint16_t)rxpacket->data[2+7*i+3] << 8)|(uint16_t)rxpacket->data[2+7*i+4]); // MAX_TIME(2)
     }
 
-    uint32_t duration = p1.t_ms - p0->t_ms;
-    if (duration % CONTROL_PERIOD_MS != 0) || (duration < 0)
-        return false;
-
+    if (p1.t_ms < p0.t_ms)
+        return trajectory_err_t::INVALID_DURATION;
+    uint32_t duration = p1.t_ms - p0.t_ms;
+    if (duration % CONTROL_PERIOD_MS != 0)
+        return trajectory_err_t::INVALID_DURATION;
     size_t count = duration / CONTROL_PERIOD_MS;
     if (count > TRAJECTORY_BUFFER_SIZE)
-        return false;
+        return trajectory_err_t::INVALID_DURATION; // so long term
 
-    // without start point
+
+    // exclude start, include end
     for (size_t i = 1; i <= count; i++){
         if (trajectory->count >= TRAJECTORY_BUFFER_SIZE)
-        {return false;}  // Buffer full
+        {return trajectory_err_t::BUFFER_FULL;}  // Buffer full
         // 만약 write가 너무 빨라서 read idx넘을수도있을텐데?
         uint32_t t_ms = i * CONTROL_PERIOD_MS;
         quintic_hermite(t_ms,&trajectory->points[trajectory->write_idx]);
         trajectory->write_idx = (trajectory->write_idx + 1) % TRAJECTORY_BUFFER_SIZE;
         trajectory->count++;
     }
-    return true;
+    return trajectory_err_t::SUCCESS;
 }
 
 static void quintic_hermite(uint32_t t_ms,waypoint_t *point)

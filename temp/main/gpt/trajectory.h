@@ -23,17 +23,24 @@ typedef struct {
     size_t count;
 } trajectory_t;
 
+enum class trajectory_err_t
+{
+    SUCCESS = 0,
+    INVALID_LENGTH = 1,
+    INVALID_DURATION = 2,
+    BUFFER_FULL = 3
+};
 
 class Trajectory
 {
 public:
     trajectory_t trajectory;
+    trajectory_err_t register_trajectory(pi_rx_packet_t *rxpacket);
     
 private:
     waypoint_t p0;    // need to init p0
     waypoint_t p1;
-    bool register_trajectory(pi_rx_packet_t *rxpacket)
-    static void quintic_hermite(uint32_t t_ms,joint_point_t *point)
+    static void quintic_hermite(uint32_t t_ms,joint_point_t *point);
 };
 
 #endif

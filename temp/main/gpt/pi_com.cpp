@@ -37,9 +37,6 @@ void pi_comm::rx_callback(int itf,cdcacm_event_t *event)
     {
         case COMM_SUCCESS:
         {
-            pi_comm_instance.rxpacket_buffer.packets[pi_comm_instance.rxpacket_buffer.write_idx] = rxpacket;
-            pi_comm_instance.rxpacket_buffer.write_idx = (pi_comm_instance.rxpacket_buffer.write_idx + 1) % PACKET_BUFFER_SIZE;
-            pi_comm_instance.rxpacket_buffer.count++;
             xTaskNotifyGive(packet_process_task_handle);
             break;
         }
@@ -188,7 +185,7 @@ int pi_comm::rx_packet(int itf)
     const uint16_t max_length = 255;    // temp버퍼의 최대 길이
     uint8_t temp[max_length];  // rx패킷을 찾기전에 잠시 저장하는 공간.
     uint16_t temp_length        = 0;    // 현재 temp버퍼 바이트 수
-    uint16_t real_len = 0;              // packet의 실제 길이
+    uint16_t packet_len = 0;              // packet의 실제 길이
 
     size_t rx_size            = 0;     // cdc로 이번에 실제로 읽은 바이트 수
     uint16_t wait_length      = min_length;   // 지금 기다리는 전체 패킷 길이 (최소 상태패킷 길이로 시작)
@@ -201,7 +198,7 @@ int pi_comm::rx_packet(int itf)
 
     while (true)
     {
-        if (temp_legnth + wait_length > temp_max_length)
+        if (temp_length + wait_length > temp_max_length)
         {
             result = COMM_BUF_OVER;
             break;
@@ -239,7 +236,7 @@ int pi_comm::rx_packet(int itf)
                     }
                     if (!found)
                     {
-                        wait_length = idx + min_length - temp_length;
+                        wait_length = idx + min_length - temp_length; // must be min_length
                         continue;
                     }
                 }
@@ -250,24 +247,18 @@ int pi_comm::rx_packet(int itf)
                          || temp[idx + PKT_LENGTH] + 8 > RXPACKET_MAX_LEN // packet_len = data(n) + 8
                          || temp[idx + PKT_INSTRUCTION] != 0x55) // 0x55 = reply inst
                     {
-                        wait_length = header_len;
                         idx += header_len; // 헤더가 될수없는 범위에 대하여 skip
+                        wait_length = idx + min_length - temp_length;
                         found = false;
-                        continue;
                     }
-                else
-                {
-
-                }
-                // 헤더패턴 + 내용 검증 후 = 진짜 헤더
-                uint16_t data_len = temp[idx + PKT_LENGTH];
-                if (idx + temp[idx + PKT_LENGTH] + 8 > temp_length)// 실제 패킷 남은거 더 받아오게 
-                {
-                    wait_length = idx + real_len;
-                    header_confirmed = true;
+                    else 
+                    {
+                        packet_len = temp[idx + PKT_LENGTH] + 8;
+                        if (idx + packet_len > temp_length)// 실제 패킷 남은거 더 받아오게 
+                        {wait_length = idx + packet_len - temp_length;}
+                        header_confirmed = true;
+                    }
                     continue;
-                }
-                header_confirmed = true;
                 }
             }
             if (header_confirmed)
@@ -276,15 +267,15 @@ int pi_comm::rx_packet(int itf)
                 result = (updateCRC(0, &temp[idx], temp_length - idx) == crc) ? COMM_SUCCESS : COMM_RX_CORRUPT; // updateCRC(시작값, 시작주소, 검증길이)
                 if (result == COMM_SUCCESS)
                 {
-                    pi2esp_packet_t rxpacket = rxpacket_buffer.packets[rxpacket_buffer.write_idx];
+                    pi2esp_packet_t &rxpacket = rxpacket_buffer.packets[rxpacket_buffer.write_idx];
                     rxpacket_buffer.write_idx = (rxpacket_buffer.write_idx + 1) % PACKET_BUFFER_SIZE;
                     rxpacket_buffer.count++;
 
                     if (!skip_stuffing)
                     {removeStuffing(rxpacket);}
-                    rxpacket.data_len = temp[idx + PKT_LENGTH];
+                    memmove(rxpacket.data, &temp[idx+7], packet_len-8); // HEAD(0xFF 0xFF 0xFD) + RSRV(!0xFD) + LEN(1) + INST(1) + DATA(N) + CRC(2)
+                    rxpacket.data_len = packet_len - 8;
                     rxpacket.inst = temp[idx + PKT_INSTRUCTION];
-                    memmove(rxpacket.data, &temp[idx+7], real_len-8); // HEAD(0xFF 0xFF 0xFD) + RSRV(!0xFD) + LEN(1) + INST(1) + DATA(N) + CRC(2)
                 }
                 break;
             }

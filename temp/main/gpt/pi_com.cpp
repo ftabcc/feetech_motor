@@ -204,7 +204,7 @@ void pi_comm::packet_process_task(void *arg)
                     }
                     break;
                 }
-                case INST_WRITE:
+                case INST_MOTOR_TRANSFER:
                     write_packet(packet);
                     break;
                 case INST_STOP:

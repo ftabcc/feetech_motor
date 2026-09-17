@@ -14,7 +14,7 @@ typedef struct
 {
     size_t data_len;
     int inst;
-    uint8_t data[PACKET_MAX_LEN];
+    uint8_t data[RXPACKET_MAX_LEN-8];
     // int crc;
 } pi2esp_packet_t;
 // HEAD(0xFF 0xFF 0xFD) + RSRV(!0xFD) + LEN(1) + INST(1) + DATA(N) + CRC(2:L,H) = N+8(N>=0)
@@ -29,10 +29,10 @@ typedef struct
 
 typedef struct
 {
-    size_t len;
+    size_t data_len;
     int inst;
     int err; // for emergency stop
-    uint8_t data[PACKET_MAX_LEN];
+    uint8_t data[TXPACKET_MAX_LEN-9];
     int crc;
 } esp2pi_packet_t;
 // HEAD(0xFF 0xFF 0xFD) + RSRV(!0xFD) + LEN(1) + INST(1) + ERR(1) + DATA(N) + CRC(2:L,H) = N+9(N>=0)
@@ -44,9 +44,10 @@ class pi_comm
 {
 public:
     static void init();
+
 private:
-    static constexpr uint16_t TXPACKET_MAX_LEN = 100;
-    static constexpr uint16_t RXPACKET_MAX_LEN = 100;
+    static constexpr uint16_t RXPACKET_MAX_LEN = 100; // rxpacket_len = data(n) + 8
+    static constexpr uint16_t TXPACKET_MAX_LEN = 100; // txpacket_len = data(n) + 9
     
     #define PACKET_BUFFER_SIZE 8
 
@@ -81,7 +82,10 @@ private:
     static void packet_process_task(void *arg);
 
     int rx_packet(int itf);
-    uint16_t updateCRC(uint16_t start, uint8_t *addr, uint16_t size);
+
+    uint16_t updateCRC(uint16_t start, uint8_t *addr, uint16_t size);    
+    int pi_comm::stuffing(uint8_t *data, int *len)
+    int pi_comm::unstuffing(uint8_t *data, int *len)
 
     Trajectory trajectory;
 };

@@ -196,9 +196,14 @@ int pi_comm::rx_packet(int itf)
     const uint16_t header_len = 3;   //  FF FF FD + byte stuffing 여부 바이트(FD면 byte-stuffing)
     int      result           = COMM_FAIL; // 종류: COMM_SUCCESS, COMM_FAIL(default), [COMM_RX_CORRUPT, COMM_BUF_OVER, COMM_RX_TIMEOUT, COMM_CDC_ERR]
 
+    if (rxpacket_buffer.count >= PACKET_BUFFER_SIZE)
+    {
+        return COMM_BUF_OVER;
+    }  
+
     while (true)
     {
-        if (temp_length + wait_length > temp_max_length)
+        if (temp_length + wait_length > sizeof(temp))
         {
             result = COMM_BUF_OVER;
             break;
@@ -227,7 +232,7 @@ int pi_comm::rx_packet(int itf)
                             break;
                         }
                         idx = (uint16_t)(p - temp);
-                        if ((temp[idx + 1] == 0xFF) &&(temp[idx + 2] == 0xFD) &&(temp[idx + 3] != 0xFD))
+                        if ((temp[idx + 1] == 0xFF) &&(temp[idx + 2] == 0xFD) &&(temp[idx + 3] != 0x00))
                         {
                             found = true;
                             break;
@@ -264,18 +269,24 @@ int pi_comm::rx_packet(int itf)
             if (header_confirmed)
             {
                 uint16_t crc = (temp[temp_length-1] & 0xFF) | ((temp[temp_length-2] & 0xFF) << 8); 
-                result = (updateCRC(0, &temp[idx], temp_length - idx) == crc) ? COMM_SUCCESS : COMM_RX_CORRUPT; // updateCRC(시작값, 시작주소, 검증길이)
+                result = (updateCRC(0, &temp[idx], packet_len - 2) == crc) ? COMM_SUCCESS : COMM_RX_CORRUPT; // updateCRC(시작값, 시작주소, 검증길이)
                 if (result == COMM_SUCCESS)
                 {
                     pi2esp_packet_t &rxpacket = rxpacket_buffer.packets[rxpacket_buffer.write_idx];
-                    rxpacket_buffer.write_idx = (rxpacket_buffer.write_idx + 1) % PACKET_BUFFER_SIZE;
-                    rxpacket_buffer.count++;
-
-                    if (!skip_stuffing)
-                    {removeStuffing(rxpacket);}
-                    memmove(rxpacket.data, &temp[idx+7], packet_len-8); // HEAD(0xFF 0xFF 0xFD) + RSRV(!0xFD) + LEN(1) + INST(1) + DATA(N) + CRC(2)
+                    
+                    memcpy(rxpacket.data, &temp[idx+6], packet_len-8); // HEAD(0xFF 0xFF 0xFD) + RSRV(!0xFD) + LEN(1) + INST(1) + DATA(N) + CRC(2)
                     rxpacket.data_len = packet_len - 8;
                     rxpacket.inst = temp[idx + PKT_INSTRUCTION];
+
+                    if (!skip_stuffing)
+                    {
+                        result = unstuffing(rxpacket.data,&rxpacket.data_len);
+                        if (result != COMM_SUCCESS)
+                        {break;}
+                    }
+
+                    rxpacket_buffer.write_idx = (rxpacket_buffer.write_idx + 1) % PACKET_BUFFER_SIZE;
+                    rxpacket_buffer.count++;
                 }
                 break;
             }
@@ -301,7 +312,6 @@ int pi_comm::rx_packet(int itf)
     port->is_using_ = false;
     return result;
 }
-
 
 void pi_comm::packet_process_task(void *arg)
 {
@@ -386,7 +396,7 @@ unsigned short pi_comm::updateCRC(uint16_t start, uint8_t *addr, uint16_t size)
 }
 
 
-int pi_comm::stuffing(uint8_t *data, int *len, int capacity)
+int pi_comm::stuffing(uint8_t *data, int *len)
 {   // 1차 탐색 2차 뒤부터 채우기(다이나믹셀 방식) vs 탐색하며 별도메모리에 추가하며 채우기
     if (data == nullptr || len == nullptr)
         return COMM_FAIL;
@@ -408,7 +418,7 @@ int pi_comm::stuffing(uint8_t *data, int *len, int capacity)
         return COMM_SUCCESS;
 
     // Check output buffer capacity
-    if (*len + stuffing_count > capacity)
+    if (*len + stuffing_count > RXPACKET_MAX_LEN - 8)
         return COMM_BUF_OVER;
 
     int read_idx = *len - 1;
@@ -437,3 +447,39 @@ int pi_comm::stuffing(uint8_t *data, int *len, int capacity)
     return COMM_SUCCESS;
 }
 
+int pi_comm::unstuffing(uint8_t *data, int *len)
+{
+    if (data == nullptr || len == nullptr)
+        return COMM_FAIL;
+
+    // Invalid length
+    if (*len < 0)
+        return COMM_FAIL;
+
+    // Too short to contain FF FF FD FD
+    if (*len < 4)
+        return COMM_SUCCESS;
+
+    int read_idx = 0;
+    int write_idx = 0;
+
+    // Read from front and compact in-place
+    while (read_idx < *len)
+    {
+        // FF FF FD FD
+        if (read_idx + 3 < *len && data[read_idx] == 0xFF && data[read_idx + 1] == 0xFF && data[read_idx + 2] == 0xFD && data[read_idx + 3] == 0xFD)
+        {
+            // Copy original FF FF FD
+            data[write_idx++] = data[read_idx++];
+            data[write_idx++] = data[read_idx++];
+            data[write_idx++] = data[read_idx++];
+            read_idx++; // Skip stuffed FD
+        }
+        else
+        {data[write_idx++] = data[read_idx++];} // Move normal byte
+    }
+
+    // Update length
+    *len = write_idx;
+    return COMM_SUCCESS;
+}

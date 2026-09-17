@@ -436,3 +436,4 @@ int pi_comm::stuffing(uint8_t *data, int *len, int capacity)
     *len += stuffing_count;
     return COMM_SUCCESS;
 }
+

@@ -41,6 +41,7 @@ static void pi_comm::rx_callback(int itf,cdcacm_event_t *event)
             pi_comm_instance.rxpacket_buffer.write_idx = (pi_comm_instance.rxpacket_buffer.write_idx + 1) % PACKET_BUFFER_SIZE;
             pi_comm_instance.rxpacket_buffer.count++;
             xTaskNotifyGive(packet_process_task_handle);
+            break;
         }
         case COMM_FAIL:
             break;
@@ -52,9 +53,9 @@ static void pi_comm::rx_callback(int itf,cdcacm_event_t *event)
             break; // 단순히 다음 패킷 기다리기
         case COMM_CDC_ERR:
             break; // cdc실패 단순 pi로 전달.
-    }
-    tx_packet() // pi로 에러 전달
-    
+
+        tx_packet() // pi로 에러 전달
+    }   
 }
 
 int pi_comm::rx_packet(int itf)
@@ -176,20 +177,20 @@ int pi_comm::rx_packet(int itf)
     return result;
 }
 
-static void packet_process_task(void *arg)
+void pi_comm::packet_process_task(void *arg)
 {
     pi_comm *self = static_cast<pi_comm *>(arg);
     while (true)
     {
         ulTaskNotifyTake(pdTRUE, portMAX_DELAY);    // Wait until at least one packet is available
-        while (rxpacket_buffer.count > 0)   // Process all queued packets
+        while (self->rxpacket_buffer.count > 0)   // Process all queued packets
         {
-            pi2esp_packet_t &packet = rxpacket_buffer.packets[rxpacket_buffer.read_idx];
+            pi2esp_packet_t &packet = self->rxpacket_buffer.packets[self->rxpacket_buffer.read_idx];
             switch (packet.inst)
             {
                 case INST_REGISTER_TRAJECTORY:
                 {
-                    trajectory_err_t err = trajectory.register_trajectory(packet);
+                    trajectory_err_t err = self->trajectory.register_trajectory(packet);
                     switch (err)
                     {
                         case trajectory_err_t::SUCCESS:
@@ -212,8 +213,8 @@ static void packet_process_task(void *arg)
                     // Invalid instruction
                     break;
             }
-            rxpacket_buffer.read_idx = (rxpacket_buffer.read_idx + 1) % PACKET_BUFFER_SIZE;
-            rxpacket_buffer.count--;
+            self->rxpacket_buffer.read_idx = (self->rxpacket_buffer.read_idx + 1) % PACKET_BUFFER_SIZE;
+            self->rxpacket_buffer.count--;
         }
     }
 }

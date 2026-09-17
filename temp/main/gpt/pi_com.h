@@ -63,8 +63,9 @@ private:
     pi2esp_packet_buffer_t rxpacket_buffer;
     esp2pi_packet_t txpacket;
 
-private:
     static void rx_callback(int itf,cdcacm_event_t *event);
+    static void packet_process_task(void *arg);
+    
     int rx_packet(int itf);
     uint16_t updateCRC(uint16_t start, uint8_t *addr, uint16_t size);
 

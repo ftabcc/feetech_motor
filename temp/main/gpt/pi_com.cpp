@@ -385,53 +385,54 @@ unsigned short pi_comm::updateCRC(uint16_t start, uint8_t *addr, uint16_t size)
   return crc_accum;
 }
 
-void pi_comm::stuffing()
+
+int pi_comm::stuffing(uint8_t *data, int *len, int capacity)
 {   // 1차 탐색 2차 뒤부터 채우기(다이나믹셀 방식) vs 탐색하며 별도메모리에 추가하며 채우기
+    if (data == nullptr || len == nullptr)
+        return COMM_FAIL;
 
-}
+    // Too short to contain FF FF FD
+    if (*len < 3)
+        return COMM_SUCCESS;
 
-void Protocol2PacketHandler::addStuffing(uint8_t *packet)
-{
-  int packet_length_in = DXL_MAKEWORD(packet[PKT_LENGTH_L], packet[PKT_LENGTH_H]);
-  int packet_length_out = packet_length_in;
-  
-  if (packet_length_in < 8) // INSTRUCTION, ADDR_L, ADDR_H, CRC16_L, CRC16_H + FF FF FD
-    return;
-
-  uint8_t *packet_ptr;
-  uint16_t packet_length_before_crc = packet_length_in - 2;
-  for (uint16_t i = 3; i < packet_length_before_crc; i++)
-  {
-    packet_ptr = &packet[i+PKT_INSTRUCTION-2];
-    if (packet_ptr[0] == 0xFF && packet_ptr[1] == 0xFF && packet_ptr[2] == 0xFD)
-      packet_length_out++;
-  }
-  
-  if (packet_length_in == packet_length_out)  // no stuffing required
-    return;
-  
-  uint16_t out_index  = packet_length_out + 6 - 2;  // last index before crc
-  uint16_t in_index   = packet_length_in + 6 - 2;   // last index before crc
-  while (out_index != in_index)
-  {
-    if (packet[in_index] == 0xFD && packet[in_index-1] == 0xFF && packet[in_index-2] == 0xFF)
+    // 1st pass: Count required stuffing bytes
+    int stuffing_count = 0;
+    for (int i = 0; i + 2 < *len; i++)
     {
-      packet[out_index--] = 0xFD; // byte stuffing
-      if (out_index != in_index)
-      {
-        packet[out_index--] = packet[in_index--]; // FD
-        packet[out_index--] = packet[in_index--]; // FF
-        packet[out_index--] = packet[in_index--]; // FF
-      }
+        if (data[i] == 0xFF && data[i + 1] == 0xFF && data[i + 2] == 0xFD)
+        {stuffing_count++;}
     }
-    else
+
+    // No stuffing required
+    if (stuffing_count == 0)
+        return COMM_SUCCESS;
+
+    // Check output buffer capacity
+    if (*len + stuffing_count > capacity)
+        return COMM_BUF_OVER;
+
+    int read_idx = *len - 1;
+    int write_idx = *len + stuffing_count - 1;
+
+    // 2nd pass: Move data backward and insert FD
+    while (read_idx >= 0)
     {
-      packet[out_index--] = packet[in_index--];
+        // FF FF FD
+        if (read_idx >= 2 && data[read_idx - 2] == 0xFF && data[read_idx - 1] == 0xFF && data[read_idx] == 0xFD)
+        {
+            // Add stuffing byte
+            data[write_idx--] = 0xFD;
+
+            // Move original FF FF FD
+            data[write_idx--] = data[read_idx--]; // FD
+            data[write_idx--] = data[read_idx--]; // FF
+            data[write_idx--] = data[read_idx--]; // FF
+        }
+        else
+        {data[write_idx--] = data[read_idx--];}// Move normal byte
     }
-  }
 
-  packet[PKT_LENGTH_L] = DXL_LOBYTE(packet_length_out);
-  packet[PKT_LENGTH_H] = DXL_HIBYTE(packet_length_out);
-
-  return;
+    // Update length
+    *len += stuffing_count;
+    return COMM_SUCCESS;
 }

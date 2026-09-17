@@ -384,3 +384,54 @@ unsigned short pi_comm::updateCRC(uint16_t start, uint8_t *addr, uint16_t size)
 
   return crc_accum;
 }
+
+void pi_comm::stuffing()
+{   // 1차 탐색 2차 뒤부터 채우기(다이나믹셀 방식) vs 탐색하며 별도메모리에 추가하며 채우기
+
+}
+
+void Protocol2PacketHandler::addStuffing(uint8_t *packet)
+{
+  int packet_length_in = DXL_MAKEWORD(packet[PKT_LENGTH_L], packet[PKT_LENGTH_H]);
+  int packet_length_out = packet_length_in;
+  
+  if (packet_length_in < 8) // INSTRUCTION, ADDR_L, ADDR_H, CRC16_L, CRC16_H + FF FF FD
+    return;
+
+  uint8_t *packet_ptr;
+  uint16_t packet_length_before_crc = packet_length_in - 2;
+  for (uint16_t i = 3; i < packet_length_before_crc; i++)
+  {
+    packet_ptr = &packet[i+PKT_INSTRUCTION-2];
+    if (packet_ptr[0] == 0xFF && packet_ptr[1] == 0xFF && packet_ptr[2] == 0xFD)
+      packet_length_out++;
+  }
+  
+  if (packet_length_in == packet_length_out)  // no stuffing required
+    return;
+  
+  uint16_t out_index  = packet_length_out + 6 - 2;  // last index before crc
+  uint16_t in_index   = packet_length_in + 6 - 2;   // last index before crc
+  while (out_index != in_index)
+  {
+    if (packet[in_index] == 0xFD && packet[in_index-1] == 0xFF && packet[in_index-2] == 0xFF)
+    {
+      packet[out_index--] = 0xFD; // byte stuffing
+      if (out_index != in_index)
+      {
+        packet[out_index--] = packet[in_index--]; // FD
+        packet[out_index--] = packet[in_index--]; // FF
+        packet[out_index--] = packet[in_index--]; // FF
+      }
+    }
+    else
+    {
+      packet[out_index--] = packet[in_index--];
+    }
+  }
+
+  packet[PKT_LENGTH_L] = DXL_LOBYTE(packet_length_out);
+  packet[PKT_LENGTH_H] = DXL_HIBYTE(packet_length_out);
+
+  return;
+}

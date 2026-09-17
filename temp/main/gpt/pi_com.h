@@ -12,7 +12,7 @@
 
 typedef struct
 {
-    size_t len;
+    size_t data_len;
     int inst;
     uint8_t data[PACKET_MAX_LEN];
     // int crc;
@@ -50,9 +50,10 @@ private:
     
     #define PACKET_BUFFER_SIZE 8
 
-    #define PKT_RESERVED = 
-    #define PKT_LENGTH = 
-    #define PKT_INSTRUCTION = 
+// HEAD(0xFF 0xFF 0xFD) + RSRV(!0xFD) + LEN(1) + INST(1) + DATA(N) + CRC(2:L,H) = N+8(N>=0)
+    #define PKT_RESERVED = 3
+    #define PKT_LENGTH = 4
+    #define PKT_INSTRUCTION = 5
 
     enum class Inst : uint8_t
     {

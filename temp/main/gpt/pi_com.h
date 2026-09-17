@@ -6,25 +6,9 @@
 #include "freertos/task.h"
 #include "tusb_cdc_acm.h"
 
-#define INST_REGISTER_TRAJECTORY  0x01
-#define INST_STOP                 0x02
-#define INST_CLEAR_TRAJECTORY     0x03
+// esp<->pi protocol
 
-#define COMM_SUCCESS        0
-#define COMM_FAIL           1
-#define COMM_RX_CORRUPT     2
-#define COMM_BUF_OVER       3
-#define COMM_RX_TIMEOUT     4
-#define COMM_CDC_ERR        5
 
-RXPACKET_MAX_LEN = 
-
-PKT_RESERVED = 
-PKT_LENGTH = 
-PKT_INSTRUCTION = 
-
-#define PACKET_MAX_LEN 100
-#define PACKET_BUFFER_SIZE 8
 
 typedef struct
 {
@@ -54,10 +38,39 @@ typedef struct
 // HEAD(0xFF 0xFF 0xFD) + RSRV(!0xFD) + LEN(1) + INST(1) + ERR(1) + DATA(N) + CRC(2:L,H) = N+9(N>=0)
 
 
+
+
 class pi_comm
 {
 public:
     static void init();
+private:
+    static constexpr uint16_t TXPACKET_MAX_LEN = 100;
+    static constexpr uint16_t RXPACKET_MAX_LEN = 100;
+    
+    #define PACKET_BUFFER_SIZE 8
+
+    #define PKT_RESERVED = 
+    #define PKT_LENGTH = 
+    #define PKT_INSTRUCTION = 
+
+    enum class Inst : uint8_t
+    {
+        REGISTER_TRAJECTORY = 0x01,
+        WRITE = 0x02,
+        STOP = 0x03
+    };
+
+    enum class Comm_Result
+    {
+        SUCCESS = 0,
+        FAIL = 1,
+        BUF_OVER = 2,
+        RX_CORRUPT = 3,
+        RX_TIMEOUT = 4,
+        CDC_ERR = 5
+    };
+
 
 private:
     pi2esp_packet_buffer_t rxpacket_buffer;
@@ -65,7 +78,7 @@ private:
 
     static void rx_callback(int itf,cdcacm_event_t *event);
     static void packet_process_task(void *arg);
-    
+
     int rx_packet(int itf);
     uint16_t updateCRC(uint16_t start, uint8_t *addr, uint16_t size);
 

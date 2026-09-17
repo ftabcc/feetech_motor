@@ -6,7 +6,6 @@
 #include "tinyusb.h"
 #include "tusb_cdc_acm.h"
 
-pi_comm pi_comm_instance;
 
 static void pi_comm::init(void *arg)
 {
@@ -28,10 +27,11 @@ static void pi_comm::init(void *arg)
     xTaskCreate(packet_process_task, "packet_process", 4096, nullptr, 10, &packet_process_task_handle);
 }
 
-static void pi_comm::rx_callback(int itf,cdcacm_event_t *event)
+pi_comm pi_comm_instance;
+void pi_comm::rx_callback(int itf,cdcacm_event_t *event)
 {
     (void)event;
-    result = pi_comm::rxpacket(itf); // 패킷수신까지만 callback안에 넣고, notify하는게 나은
+    int result = pi_comm_instance.rx_packet(itf); // 패킷수신까지만 callback안에 넣고, notify하는게 나은
     // 통신실패에 따른 처리
     switch (result)
     {
@@ -54,7 +54,7 @@ static void pi_comm::rx_callback(int itf,cdcacm_event_t *event)
         case COMM_CDC_ERR:
             break; // cdc실패 단순 pi로 전달.
 
-        tx_packet() // pi로 에러 전달
+        tx_packet(); // pi로 에러 전달
     }   
 }
 
@@ -72,7 +72,7 @@ int pi_comm::rx_packet(int itf)
     uint16_t idx              = 0;    // 이번에 확인하기 시작하는 바이트 idx. idx이전은 헤더시작불가능 영역. 
     bool     found            = false;// 헤더패턴 찾음 여부
     bool     header_confirmed = false;// 헤더패턴 + 내용검증(Reserved+Length+Instruction) 검증 여부
-    const uint16_t HEADER_LEN = 3;   //  FF FF FD + byte stuffing 여부 바이트(FD면 byte-stuffing)
+    const uint16_t header_len = 3;   //  FF FF FD + byte stuffing 여부 바이트(FD면 byte-stuffing)
     int      result           = COMM_FAIL; // 종류: COMM_SUCCESS, COMM_FAIL(default), [COMM_RX_CORRUPT, COMM_BUF_OVER, COMM_RX_TIMEOUT, COMM_CDC_ERR]
 
     while (true)
@@ -94,7 +94,7 @@ int pi_comm::rx_packet(int itf)
         {
             if (!header_confirmed)
             {
-                uint16_t limit = rx_length - HEADER_LEN;
+                uint16_t limit = rx_length - header_len;
                 if (!found)
                 {
                 while (idx < limit) // limit이전까지만 헤더 확인 가능
@@ -124,8 +124,8 @@ int pi_comm::rx_packet(int itf)
                 {
                 if (temp[idx + PKT_RESERVED] != 0x00 || temp[idx + PKT_LENGTH] > RXPACKET_MAX_LEN || temp[idx + PKT_INSTRUCTION] != 0x55) // 내용 검증
                 {
-                    wait_length += HEADER_LEN;
-                    idx += HEADER_LEN; // 헤더가 될수없는 범위에 대하여 skip
+                    wait_length += header_len;
+                    idx += header_len; // 헤더가 될수없는 범위에 대하여 skip
                     found = false;
                     continue;
                 }

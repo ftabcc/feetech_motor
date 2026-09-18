@@ -13,10 +13,6 @@
 #include "ring_buff.h"
 
 
-// ============================================================================
-// PI <-> ESP Protocol
-// ============================================================================
-
 namespace pi_protocol
 {
     // Packet position
@@ -26,23 +22,13 @@ namespace pi_protocol
     constexpr uint16_t PKT_ERROR        = 6;
     constexpr uint16_t PKT_DATA         = 7;
 
-    // Maximum packet size
     constexpr uint16_t RXPACKET_MAX_LEN = 100;
     constexpr uint16_t TXPACKET_MAX_LEN = 100;
-
-    // Maximum queued packet count
     constexpr uint16_t RXPACKET_MAX_NUM = 100;
     constexpr uint16_t TXPACKET_MAX_NUM = 100;
 }
 
-
-// ============================================================================
-// RX packet
-//
-// FF FF FD 00 LEN INST DATA CRC_L CRC_H
-// Total length = DATA(N) + 8
-// ============================================================================
-
+// rxpacket_len = DATA(N) + 8 (FF FF FD 00 LEN INST DATA CRC_L CRC_H)
 typedef struct
 {
     uint16_t data_len;
@@ -50,14 +36,7 @@ typedef struct
     uint8_t data[pi_protocol::RXPACKET_MAX_LEN - 8];
 } pi2esp_packet_t;
 
-
-// ============================================================================
-// TX packet
-//
-// FF FF FD 00 LEN INST ERR DATA CRC_L CRC_H
-// Total length = DATA(N) + 9
-// ============================================================================
-
+// txpacket_len = DATA(N) + 9 (FF FF FD 00 LEN INST ERR DATA CRC_L CRC_H)
 typedef struct
 {
     uint16_t data_len;
@@ -65,11 +44,6 @@ typedef struct
     uint8_t err;
     uint8_t data[pi_protocol::TXPACKET_MAX_LEN - 9];
 } esp2pi_packet_t;
-
-
-// ============================================================================
-// Communication class
-// ============================================================================
 
 class pi_comm
 {
@@ -97,7 +71,6 @@ private:
         CDC_ERR        = 7
     };
 
-
     QueueHandle_t rx_queue = nullptr;
     QueueHandle_t tx_queue = nullptr;
 
@@ -105,19 +78,14 @@ private:
     TaskHandle_t packet_process_task_handle = nullptr;
     TaskHandle_t tx_task_handle = nullptr;
 
-    static constexpr uint16_t RX_RING_BUFFER_SIZE = 512;
-    RingBuffer rx_parse_buffer{RXPAKET_MAX_LEN};
+    uint8_t rx_parse_buffer[RXPACKET_MAX_LEN]{};
+    uint16_t rx_parse_length = 0;
+    uint16_t rx_packet_len = 0;
     static constexpr uint16_t RX_DEBUG_BUFFER_SIZE = 512;
     RingBuffer rx_debug_buffer{RX_DEBUG_BUFFER_SIZE};
 
-    uint16_t rx_buffer_length = 0;
-    uint16_t rx_packet_len = 0;
-
-    pi2esp_packet_t rxpacket{};
-    esp2pi_packet_t txpacket{};
 
 
-    Trajectory trajectory;
 
     static void rx_callback(int itf, cdcacm_event_t *event);
     static void rx_task(void *arg);
@@ -127,12 +95,16 @@ private:
     static void packet_process_task(void *arg);
 
     static void tx_task(void *arg);
-    Comm_Result tx_packet(int itf, const esp2pi_packet_t &txpacket);
+    Comm_Result tx_packet(const esp2pi_packet_t &txpacket);
 
 
     uint16_t updateCRC(uint16_t start, uint8_t *addr, uint16_t size);
     Comm_Result stuffing(uint8_t *data, uint16_t *len);
     Comm_Result unstuffing(uint8_t *data, uint16_t *len);
+
+
+    // INST
+    Trajectory trajectory;
 };
 
 extern pi_comm pi_comm_instance;

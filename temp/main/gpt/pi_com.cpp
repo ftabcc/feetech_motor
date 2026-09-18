@@ -25,7 +25,6 @@ static void pi_comm::init(void *arg)
     rx_queue = xQueueCreate(RXPACKET_MAX_NUM, sizeof(pi2esp_packet_t));
     tx_queue = xQueueCreate(TXPACKET_MAX_NUM, sizeof(esp2pi_packet_t));
 
-    TaskHandle_t packet_process_task_handle = nullptr;
     xTaskCreate(packet_process_task, "packet_process", 4096, nullptr, 10, &packet_process_task_handle);
 
 }

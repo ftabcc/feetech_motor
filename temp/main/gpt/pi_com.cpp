@@ -27,6 +27,7 @@ static void pi_comm::init(void *arg)
     xTaskCreate(packet_process_task, "packet_process", 4096, nullptr, 10, &packet_process_task_handle);
 }
 
+// save
 pi_comm pi_comm_instance;
 void pi_comm::rx_callback(int itf,cdcacm_event_t *event)
 {
@@ -57,6 +58,210 @@ void pi_comm::rx_callback(int itf,cdcacm_event_t *event)
     }   
 }
 
+
+void pi_comm::rx_callback(int itf, cdcacm_event_t *event)
+{
+    (void)event;
+    constexpr size_t RX_TEMP_SIZE = 64;
+    uint8_t temp[RX_TEMP_SIZE];
+    size_t rx_size = 0;
+    esp_err_t ret = tinyusb_cdcacm_read(itf, temp, sizeof(temp), &rx_size);
+    if (ret != ESP_OK)
+    {return;} // CDC error handling
+    if (rx_size == 0)
+    {return;}
+    if (!rx_ring_buffer.write(temp, rx_size))
+    {return;}// RX ring buffer overflow
+    xTaskNotifyGive(rx_task_handle);
+}
+
+void pi_comm::rx_task(void *arg)
+{
+    pi_comm *self = static_cast<pi_comm *>(arg);
+    while (true)
+    {
+        ulTaskNotifyTake(pdTRUE, portMAX_DELAY);
+        while (self->rx_ring_buffer.available() > 0)
+        {
+            Comm_Result result = self->rx_packet();
+            if (result == Comm_Result::NEED_MORE_DATA)
+            {break;}
+            if (result == Comm_Result::SUCCESS)
+            {xTaskNotifyGive(self->packet_process_task_handle);}
+        }
+    }
+}
+
+Comm_Result pi_comm::rx_packet()
+{
+    constexpr uint16_t HEADER_LEN = 4;
+    constexpr uint16_t MIN_PACKET_LEN = 11;
+    uint8_t byte = 0;
+
+    while (rx_ring_buffer.pop(byte))
+    {
+        if (rx_parse_length < HEADER_LEN)
+        {
+            switch (rx_parse_length)
+            {
+                case 0:
+                {
+                    if (byte == 0xFF)
+                    {
+                        rx_parse_buffer[0] = byte;
+                        rx_parse_length = 1;
+                    }
+                    break;
+                }
+                case 1:
+                {
+                    if (byte == 0xFF)
+                    {
+                        rx_parse_buffer[1] = byte;
+                        rx_parse_length = 2;
+                    }
+                    else
+                    {
+                        rx_parse_length = 0;
+                    }
+                    break;
+                }
+                case 2:
+                {
+                    if (byte == 0xFD)
+                    {
+                        rx_parse_buffer[2] = byte;
+                        rx_parse_length = 3;
+                    }
+                    else if (byte == 0xFF)
+                    {
+                        // FF FF FF → 마지막 FF를 새로운 시작으로 사용
+                        rx_parse_buffer[1] = 0xFF;
+                        rx_parse_length = 2;
+                    }
+                    else
+                    {
+                        rx_parse_length = 0;
+                    }
+                    break;
+                }
+                case 3:
+                {
+                    if (byte == 0x00)
+                    {
+                        rx_parse_buffer[3] = byte;
+                        rx_parse_length = 4;
+                    }
+                    else if (byte == 0xFF)
+                    {
+                        // FF FF FD FF → 이 FF를 새로운 header 시작으로 사용
+                        rx_parse_buffer[0] = 0xFF;
+                        rx_parse_length = 1;
+                    }
+                    else
+                    {
+                        rx_parse_length = 0;
+                    }
+                    break;
+                }
+            }
+            continue;
+        }
+
+        // Read LENGTH
+        if (rx_parse_length == 4)
+        {
+            rx_parse_buffer[4] = byte;
+            rx_packet_len = static_cast<uint16_t>(byte) + 8;
+            if (rx_packet_len < MIN_PACKET_LEN || rx_packet_len > RXPACKET_MAX_LEN) // invalid packet length
+            {
+                rx_parse_length = 0;
+                rx_packet_len = 0;
+                if (byte == 0xFF) // Current byte can be the start of a new header
+                {
+                    rx_parse_buffer[0] = byte;
+                    rx_parse_length = 1;
+                }
+                continue;
+            }
+            rx_parse_length = 5;
+            continue;
+        }
+        // Read INSTRUCTION
+        if (rx_parse_length == 5)
+        {
+            // 0x55 = reply instruction
+            if (byte != 0x55)
+            {
+                rx_parse_length = 0;
+                rx_packet_len = 0;
+                if (byte == 0xFF) // Current byte can be the start of a new header
+                {
+                    rx_parse_buffer[0] = byte;
+                    rx_parse_length = 1;
+                }
+                continue;
+            }
+            rx_parse_buffer[5] = byte;
+            rx_parse_length = 6;
+            continue;
+        }
+
+        if (rx_parse_length < rx_packet_len) // Read DATA + CRC
+        {rx_parse_buffer[rx_parse_length++] = byte;}
+
+        if (rx_parse_length < rx_packet_len)// Packet not complete yet
+        {continue;}
+        // CRC check
+        uint16_t crc = static_cast<uint16_t>(rx_parse_buffer[rx_packet_len - 2]) | (static_cast<uint16_t>(rx_parse_buffer[rx_packet_len - 1]) << 8);
+        uint16_t calculated_crc = updateCRC(0, rx_parse_buffer, rx_packet_len - 2);
+        if (calculated_crc != crc)
+        {
+            rx_parse_length = 0;
+            rx_packet_len = 0;
+            return Comm_Result::RX_CORRUPT;
+        }
+        if (rxpackets.count >= RXPACKET_MAX_NUM) // RX packet buffer full
+        {
+            rx_parse_length = 0;
+            rx_packet_len = 0;
+            return Comm_Result::BUF_NUM_OVER;
+        }
+
+        pi2esp_packet_t &rxpacket = rxpackets.packets[rxpackets.write_idx];
+        rxpacket.data_len = rx_packet_len - 8;
+        rxpacket.inst = rx_parse_buffer[PKT_INSTRUCTION];
+
+        if (rxpacket.data_len > sizeof(rxpacket.data))
+        {
+            rx_parse_length = 0;
+            rx_packet_len = 0;
+            return Comm_Result::BUF_LEN_OVER;
+        }
+
+        memcpy(rxpacket.data,&rx_parse_buffer[6],rxpacket.data_len);
+        Comm_Result result = unstuffing(rxpacket.data, &rxpacket.data_len);
+
+        if (result != Comm_Result::SUCCESS)
+        {
+            rx_parse_length = 0;
+            rx_packet_len = 0;
+            return result;
+        }
+
+        rxpackets.write_idx = (rxpackets.write_idx + 1) % RXPACKET_MAX_NUM;
+        rxpackets.count++;
+        // Reset parser for next packet
+        rx_parse_length = 0;
+        rx_packet_len = 0;
+        return Comm_Result::SUCCESS;
+    }
+    // Ring buffer became empty before a complete packet arrived
+    return Comm_Result::NEED_MORE_DATA;
+}
+
+
+// save
 int pi_comm::rx_packet(int itf)
 {
     const uint16_t min_length       = 11;   // 프로토콜 구조상 될 수 있는 패킷의 최소 길이

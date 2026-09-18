@@ -6,7 +6,6 @@
 #include "tinyusb.h"
 #include "tusb_cdc_acm.h"
 
-
 static void pi_comm::init(void *arg)
 {
     // ESP_LOGI(TAG, "USB initialization");
@@ -30,38 +29,6 @@ static void pi_comm::init(void *arg)
     xTaskCreate(packet_process_task, "packet_process", 4096, nullptr, 10, &packet_process_task_handle);
 
 }
-
-// save
-pi_comm pi_comm_instance;
-void pi_comm::rx_callback(int itf,cdcacm_event_t *event)
-{
-    (void)event;
-    int result = pi_comm_instance.rx_packet(itf); // 패킷수신까지만 callback안에 넣고, notify하는게 나은
-    // 통신실패에 따른 처리
-    switch (result)
-    {
-        case Comm_Result::SUCCESS:
-        {
-            xTaskNotifyGive(packet_process_task_handle);
-            break;
-        }
-        case Comm_Result::FAIL:
-            break;
-        case Comm_Result::BUF_LEN_OVER:
-            break; // pi로 전달
-        case Comm_Result::BUF_NUM_OVER:
-            break; // pi로 전달
-        case Comm_Result::RX_CORRUPT:
-            break; // 단순히 다음 패킷 기다리기
-        case Comm_Result::RX_TIMEOUT:
-            break; // 단순히 다음 패킷 기다리기
-        case Comm_Result::CDC_ERR:
-            break; // cdc실패 단순 pi로 전달.
-
-        tx_packet(); // pi로 에러 전달
-    }   
-}
-
 
 void pi_comm::rx_callback(int itf, cdcacm_event_t *event)
 {
@@ -97,13 +64,14 @@ rx_task안에 packet_process넣기?
 void pi_comm::rx_task(void *arg)
 {
     pi_comm *self = static_cast<pi_comm *>(arg);
+    pi2esp_packet_t rxpacket;
     while (true)
     {
         ulTaskNotifyTake(pdTRUE, portMAX_DELAY);
         while (self->rx_parse_buffer.available() > 0)
         {
             '''timeout확인 필요'''
-            Comm_Result result = self->rx_packet();
+            Comm_Result result = self->rx_packet(rxpacket;);
             if (result == Comm_Result::NEED_MORE_DATA)
             {break;}
             if (result == Comm_Result::SUCCESS)
@@ -121,7 +89,7 @@ void pi_comm::rx_task(void *arg)
     }
 }
 
-Comm_Result pi_comm::rx_packet()
+Comm_Result pi_comm::rx_packet(pi2esp_packet_t &rxpacket)
 {
     constexpr uint16_t HEADER_LEN = 4;
     constexpr uint16_t MIN_PACKET_LEN = 11;
@@ -334,28 +302,52 @@ if (xQueueSend(tx_queue, &request, 0) != pdTRUE)
     // TX queue full
 }'''
 
-
 void pi_comm::tx_task(void *arg)
 {
     pi_comm *self = static_cast<pi_comm *>(arg);
-    esp2pi_packet_t packet;
+    esp2pi_packet_t txpacket;
     while (true)
     {
-        if (xQueueReceive(self->tx_queue, &packet, portMAX_DELAY) == pdTRUE)
-        {self->tx_packet(TINYUSB_CDC_ACM_0, packet);}
+        if (xQueueReceive(self->tx_queue, &txpacket, portMAX_DELAY) == pdTRUE)
+        {self->tx_packet();}
     }
 }
 
-int pi_comm::tx_packet(int itf, const pi_tx_request_t &request)
+int pi_comm::tx_packet(esp2pi_packet_t &txpacket)
 {
-    // Build protocol packet
-    // CRC
-    // Byte stuffing
-    tinyusb_cdcacm_write_queue(itf, data, len);
-    tinyusb_cdcacm_write_flush(itf, 0);
+    uint8_t tx_buffer[PACKET_MAX_LEN];
+    uint16_t tx_len = 0;
 
-    return COMM_SUCCESS;
+    Comm_Result result = stuffing(txpacket.data, &txpacket.data_len);
+    if (result != Comm_Result::SUCCESS)
+    {return result;}
+        
+    // 유의미한 조건문인가??...
+    if (txpacket.data_len > sizeof(txpacket.data))
+    {
+        return Comm_Result::BUF_LEN_OVER;
+    }
+
+    tx_buffer[0] = 0xFF;
+    tx_buffer[1] = 0xFF;
+    tx_buffer[2] = 0xFD;
+    tx_buffer[3] = 0x00;
+    tx_buffer[4] = static_cast<uint8_t>(txpacket.data_len);
+    tx_buffer[5] = txpacket.inst;
+    tx_buffer[6] = txpacket.err;
+    memcpy(&tx_buffer[7],txpacket.data,txpacket.data_len);
+
+    // CRC
+    uint16_t crc = updateCRC(0,tx_buffer,txpacket.data_len+7); // txpacket_len = data(n) + 9
+    tx_buffer[txpacket.data_len+7] = static_cast<uint8_t>(crc & 0xFF);
+    tx_buffer[txpacket.data_len+8] = static_cast<uint8_t>((crc >> 8) & 0xFF);
+
+    if (tinyusb_cdcacm_write_queue(TINYUSB_CDC_ACM_0, tx_buffer, txpacket.data_len+9) != ESP_OK)
+    {return Comm_Result::CDC_ERR;}
+    tinyusb_cdcacm_write_flush(TINYUSB_CDC_ACM_0, 0);
+    return Comm_Result::SUCCESS;
 }
+
 
 
 // CRC16bit(0x8005)

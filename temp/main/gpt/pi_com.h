@@ -25,7 +25,7 @@ typedef struct
     int inst = 55; //reply inst
     int err;
     uint8_t data[TXPACKET_MAX_LEN-9];
-    int crc;
+    // int crc;
 } esp2pi_packet_t;
 // HEAD(0xFF 0xFF 0xFD) + RSRV(!0xFD) + LEN(1) + INST(1) + ERR(1) + DATA(N) + CRC(2:L,H) = N+9(N>=0)
 
@@ -67,9 +67,7 @@ private:
 
 private:
     static constexpr uint16_t RXPACKET_MAX_LEN = 100; // rxpacket_len = data(n) + 8
-    pi2esp_packet_t rxpacket; // for temp rxpacket before send queue
     static constexpr uint16_t TXPACKET_MAX_LEN = 100; // txpacket_len = data(n) + 9
-    esp2pi_packet_t txpacket; // for temp rxpacket before send queue
 
     static constexpr uint16_t RXPACKET_MAX_NUM = 100;
     QueueHandle_t rx_queue;
@@ -83,11 +81,11 @@ private:
 private:
     static void rx_callback(int itf,cdcacm_event_t *event);
     static void rx_task(void *arg);
-    Comm_Result rx_packet();
+    Comm_Result rx_packet(pi2esp_packet_t &rxpacket);
     
     static void packet_process_task(void *arg);
 
-    Comm_Result tx_packet(int itf, const pi_tx_packet_t &packet);
+    Comm_Result tx_packet(esp2pi_packet_t &txpacket);
     static void tx_task(void *arg);
 
     uint16_t updateCRC(uint16_t start, uint8_t *addr, uint16_t size);    

@@ -7,11 +7,9 @@
 #include "tusb_cdc_acm.h"
 
 #include "trajectory.h"
+#include "ring_buff.h"
 
 // esp<->pi protocol
-
-
-
 typedef struct
 {
     size_t data_len;
@@ -91,7 +89,9 @@ private:
 
 
 private:
+    pi2esp_packet_t rxpacket; // for temp rxpacket before send queue
     pi2esp_packets_t rxpackets;
+    esp2pi_packet_t txpacket; // for temp rxpacket before send queue
     esp2pi_packets_t txpackets;
 
     static void rx_callback(int itf,cdcacm_event_t *event);
@@ -100,10 +100,13 @@ private:
     int rx_packet(int itf);
 
     uint16_t updateCRC(uint16_t start, uint8_t *addr, uint16_t size);    
-    int pi_comm::stuffing(uint8_t *data, int *len)
-    int pi_comm::unstuffing(uint8_t *data, int *len)
+    int pi_comm::stuffing(uint8_t *data, int *len);
+    int pi_comm::unstuffing(uint8_t *data, int *len);
 
+    RingBuffer rx_parse_buffer;
+    RingBuffer rx_debug_buffer;
     Trajectory trajectory;
+
 };
 
 extern pi_comm pi_comm_instance;

@@ -59,6 +59,7 @@ void pi_comm::rx_callback(int itf, cdcacm_event_t *event)
     xTaskNotifyGive(rx_task_handle);
 }
 
+
 void pi_comm::rx_task(void *arg)
 {
     pi_comm *self = static_cast<pi_comm *>(arg);

@@ -92,7 +92,7 @@ void pi_comm::rx_callback(int itf, cdcacm_event_t *event)
 }
 
 '''
-rx_task안에 packet_process넣기
+rx_task안에 packet_process넣기?
 '''
 void pi_comm::rx_task(void *arg)
 {
@@ -102,6 +102,7 @@ void pi_comm::rx_task(void *arg)
         ulTaskNotifyTake(pdTRUE, portMAX_DELAY);
         while (self->rx_parse_buffer.available() > 0)
         {
+            '''timeout확인 필요'''
             Comm_Result result = self->rx_packet();
             if (result == Comm_Result::NEED_MORE_DATA)
             {break;}
@@ -334,33 +335,17 @@ if (xQueueSend(tx_queue, &request, 0) != pdTRUE)
 }'''
 
 
-static int pi_comm::tx_packet(int itf)
-{
-    xQueueSend(self->rx_queue,&self->parsed_rx_packet,0) != pdTRUE
-}
-
-void pi_comm::tx_task(void *arg)
-{
-    pi_comm *self = static_cast<pi_comm *>(arg);
-    while (true)
-    {
-        ulTaskNotifyTake(pdTRUE, portMAX_DELAY);
-        tinyusb_cdcacm_write_queue(itf,data,len);
-        tinyusb_cdcacm_write_flush(itf, 0);
-    }
-}
-
 void pi_comm::tx_task(void *arg)
 {
     pi_comm *self = static_cast<pi_comm *>(arg);
     esp2pi_packet_t packet;
-
     while (true)
     {
         if (xQueueReceive(self->tx_queue, &packet, portMAX_DELAY) == pdTRUE)
         {self->tx_packet(TINYUSB_CDC_ACM_0, packet);}
     }
 }
+
 int pi_comm::tx_packet(int itf, const pi_tx_request_t &request)
 {
     // Build protocol packet

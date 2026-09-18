@@ -287,17 +287,6 @@ void pi_comm::packet_process_task(void *arg)
     }
 }
 
-'''pi_tx_request_t request{};
-
-request.inst = INST_ERROR;
-request.data_len = len;
-memcpy(request.data, data, len);
-
-if (xQueueSend(tx_queue, &request, 0) != pdTRUE)
-{
-    // TX queue full
-}'''
-
 void pi_comm::tx_task(void *arg)
 {
     pi_comm *self = static_cast<pi_comm *>(arg);

@@ -65,7 +65,7 @@ rx_task안에 packet_process넣기?
 void pi_comm::rx_task(void *arg)
 {
     pi_comm *self = static_cast<pi_comm *>(arg);
-    pi2esp_packet_t rxpacket;
+    pi_protocol::rxpacket_t rxpacket;
     while (true)
     {
         ulTaskNotifyTake(pdTRUE, portMAX_DELAY);
@@ -90,7 +90,7 @@ void pi_comm::rx_task(void *arg)
     }
 }
 
-Comm_Result pi_comm::rx_packet(pi2esp_packet_t &rxpacket)
+pi_protocol::Comm_Result pi_comm::rx_packet(pi_protocol::rxpacket_t &rxpacket)
 {
     constexpr uint16_t HEADER_LEN = 4;
     constexpr uint16_t MIN_PACKET_LEN = 11;
@@ -304,7 +304,7 @@ if (xQueueSend(tx_queue, &request, 0) != pdTRUE)
 void pi_comm::tx_task(void *arg)
 {
     pi_comm *self = static_cast<pi_comm *>(arg);
-    esp2pi_packet_t txpacket;
+    pi_protocol::txpacket_t txpacket;
     while (true)
     {
         if (xQueueReceive(self->tx_queue, &txpacket, portMAX_DELAY) == pdTRUE)
@@ -312,7 +312,7 @@ void pi_comm::tx_task(void *arg)
     }
 }
 
-int pi_comm::tx_packet(esp2pi_packet_t &txpacket)
+pi_protocol::Comm_Result pi_comm::tx_packet(pi_protocol::txpacket_t &txpacket)
 {
     uint8_t tx_buffer[pi_protocol::TXPACKET_MAX_LEN];
     uint16_t tx_len = 0;

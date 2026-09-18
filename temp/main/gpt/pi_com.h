@@ -84,9 +84,7 @@ private:
     static constexpr uint16_t RX_DEBUG_BUFFER_SIZE = 512;
     RingBuffer rx_debug_buffer{RX_DEBUG_BUFFER_SIZE};
 
-
-
-
+    
     static void rx_callback(int itf, cdcacm_event_t *event);
     static void rx_task(void *arg);
     Comm_Result rx_packet(pi2esp_packet_t &rxpacket);

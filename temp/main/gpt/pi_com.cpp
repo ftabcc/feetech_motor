@@ -22,8 +22,8 @@ static void pi_comm::init(void *arg)
 
     ESP_ERROR_CHECK(tinyusb_cdcacm_init(&acm_cfg));
 
-    rx_queue = xQueueCreate(RXPACKET_MAX_NUM, sizeof(pi2esp_packet_t));
-    tx_queue = xQueueCreate(TXPACKET_MAX_NUM, sizeof(esp2pi_packet_t));
+    rx_queue = xQueueCreate(pi_protocol::RXPACKET_MAX_NUM, sizeof(pi2esp_packet_t));
+    tx_queue = xQueueCreate(pi_protocol::TXPACKET_MAX_NUM, sizeof(esp2pi_packet_t));
 
     xTaskCreate(rx_task, "rx_task", 4096, this, 10, &rx_task_handle);
     xTaskCreate(packet_process_task, "packet_process", 4096, this, 10, nullptr);
@@ -168,7 +168,7 @@ Comm_Result pi_comm::rx_packet(pi2esp_packet_t &rxpacket)
         {
             rx_parse_buffer[4] = byte;
             rx_packet_len = static_cast<uint16_t>(byte) + 8; // rxpacket_len = data(n) + 8
-            if (rx_packet_len < MIN_PACKET_LEN || rx_packet_len > RXPACKET_MAX_LEN) // invalid packet length
+            if (rx_packet_len < MIN_PACKET_LEN || rx_packet_len > pi_protocol::RXPACKET_MAX_LEN) // invalid packet length
             {
                 rx_parse_length = 0;
                 rx_packet_len = 0;
@@ -314,7 +314,7 @@ void pi_comm::tx_task(void *arg)
 
 int pi_comm::tx_packet(esp2pi_packet_t &txpacket)
 {
-    uint8_t tx_buffer[PACKET_MAX_LEN];
+    uint8_t tx_buffer[pi_protocol::TXPACKET_MAX_LEN];
     uint16_t tx_len = 0;
 
     Comm_Result result = stuffing(txpacket.data, &txpacket.data_len);
@@ -406,7 +406,7 @@ int pi_comm::stuffing(uint8_t *data, int *len)
             return Comm_Result::SUCCESS;
 
         // Check output buffer capacity
-        if (*len + stuffing_count > RXPACKET_MAX_LEN - 8)
+        if (*len + stuffing_count > pi_protocol::RXPACKET_MAX_LEN - 8)
             return Comm_Result::BUF_LEN_OVER;
 
         int read_idx = *len - 1;

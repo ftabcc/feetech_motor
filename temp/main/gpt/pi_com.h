@@ -75,8 +75,8 @@ private:
     QueueHandle_t tx_queue = nullptr;
 
     TaskHandle_t rx_task_handle = nullptr;
-    TaskHandle_t packet_process_task_handle = nullptr;
-    TaskHandle_t tx_task_handle = nullptr;
+    // TaskHandle_t packet_process_task_handle = nullptr;
+    // TaskHandle_t tx_task_handle = nullptr;
 
     uint8_t rx_parse_buffer[RXPACKET_MAX_LEN]{};
     uint16_t rx_parse_length = 0;
@@ -90,7 +90,6 @@ private:
     static void rx_callback(int itf, cdcacm_event_t *event);
     static void rx_task(void *arg);
     Comm_Result rx_packet(pi2esp_packet_t &rxpacket);
-
 
     static void packet_process_task(void *arg);
 

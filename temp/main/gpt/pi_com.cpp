@@ -25,7 +25,9 @@ static void pi_comm::init(void *arg)
     rx_queue = xQueueCreate(RXPACKET_MAX_NUM, sizeof(pi2esp_packet_t));
     tx_queue = xQueueCreate(TXPACKET_MAX_NUM, sizeof(esp2pi_packet_t));
 
-    xTaskCreate(packet_process_task, "packet_process", 4096, nullptr, 10, &packet_process_task_handle);
+    xTaskCreate(rx_task, "rx_task", 4096, this, 10, &rx_task_handle);
+    xTaskCreate(packet_process_task, "packet_process", 4096, this, 10, nullptr);
+    xTaskCreate(tx_task, "tx_task", 4096, this, 10, nullptr);
 
 }
 
@@ -288,8 +290,6 @@ void pi_comm::packet_process_task(void *arg)
     }
 }
 
-
-
 '''pi_tx_request_t request{};
 
 request.inst = INST_ERROR;
@@ -346,8 +346,6 @@ int pi_comm::tx_packet(esp2pi_packet_t &txpacket)
     tinyusb_cdcacm_write_flush(TINYUSB_CDC_ACM_0, 0);
     return Comm_Result::SUCCESS;
 }
-
-
 
 // CRC16bit(0x8005)
 unsigned short pi_comm::updateCRC(uint16_t start, uint8_t *addr, uint16_t size)

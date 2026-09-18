@@ -95,14 +95,21 @@ private:
     esp2pi_packets_t txpackets;
 
     static void rx_callback(int itf,cdcacm_event_t *event);
+    static void rx_task(void *arg);
+    Comm_Result rx_packet();
+    
     static void packet_process_task(void *arg);
 
-    int rx_packet(int itf);
+    Comm_Result tx_packet(int itf, const pi_tx_packet_t &packet);
+    static void tx_task(void *arg);
 
     uint16_t updateCRC(uint16_t start, uint8_t *addr, uint16_t size);    
     int pi_comm::stuffing(uint8_t *data, int *len);
     int pi_comm::unstuffing(uint8_t *data, int *len);
 
+    QueueHandle_t rx_queue;
+    QueueHandle_t tx_queue;
+    
     RingBuffer rx_parse_buffer;
     RingBuffer rx_debug_buffer;
     Trajectory trajectory;

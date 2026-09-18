@@ -23,8 +23,12 @@ static void pi_comm::init(void *arg)
 
     ESP_ERROR_CHECK(tinyusb_cdcacm_init(&acm_cfg));
 
+    rx_queue = xQueueCreate(RXPACKET_MAX_NUM, sizeof(pi2esp_packet_t));
+    tx_queue = xQueueCreate(TXPACKET_MAX_NUM, sizeof(esp2pi_packet_t));
+
     TaskHandle_t packet_process_task_handle = nullptr;
     xTaskCreate(packet_process_task, "packet_process", 4096, nullptr, 10, &packet_process_task_handle);
+
 }
 
 // save
@@ -66,7 +70,7 @@ void pi_comm::rx_callback(int itf, cdcacm_event_t *event)
     uint8_t temp[RX_TEMP_SIZE];
     size_t rx_size = 0;
     esp_err_t ret = tinyusb_cdcacm_read(itf, temp, sizeof(temp), &rx_size);
-    if (ret != ESP_OK)// CDC error handling
+    if (ret != ESP_OK)
     {
         return;
     } 
@@ -74,13 +78,22 @@ void pi_comm::rx_callback(int itf, cdcacm_event_t *event)
     {
         return;
     }
-    if (!rx_parse_buffer.write(temp, rx_size)) // RX ring buffer overflow
+    
+    if (rx_parse_buffer.write(temp, rx_size) != rx_size)
     {
+        // parse buffer overflow
         return;
+    }
+    if (rx_debug_buffer.write(temp, rx_size) != rx_size)
+    {
+        // timeout 처리?...??
     }
     xTaskNotifyGive(rx_task_handle);
 }
 
+'''
+rx_task안에 packet_process넣기
+'''
 void pi_comm::rx_task(void *arg)
 {
     pi_comm *self = static_cast<pi_comm *>(arg);
@@ -94,7 +107,7 @@ void pi_comm::rx_task(void *arg)
             {break;}
             if (result == Comm_Result::SUCCESS)
             {
-                if (xQueueSend(self->rx_queue,&self->parsed_rx_packet,0) != pdTRUE)
+                if (xQueueSend(self->rx_queue,&self->rxpacket,0) != pdTRUE) // (,,꽉 차면 대기할 시간)
                 {
                     // RX packet queue full
                 }
@@ -234,16 +247,15 @@ Comm_Result pi_comm::rx_packet()
             return Comm_Result::RX_CORRUPT;
         }
 
-        rxpacket.data_len = rx_packet_len - 8;
-        rxpacket.inst = rx_parse_buffer[PKT_INSTRUCTION];
-
-        if (rxpacket.data_len > sizeof(rxpacket.data))
+        if (rx_packet_len - 8 > sizeof(rxpacket.data))
         {
             rx_parse_length = 0;
             rx_packet_len = 0;
             return Comm_Result::BUF_LEN_OVER;
         }
 
+        rxpacket.data_len = rx_packet_len - 8;
+        rxpacket.inst = rx_parse_buffer[PKT_INSTRUCTION];
         memcpy(rxpacket.data,&rx_parse_buffer[6],rxpacket.data_len);
         Comm_Result result = unstuffing(rxpacket.data, &rxpacket.data_len);
         if (result != Comm_Result::SUCCESS)
@@ -264,57 +276,102 @@ Comm_Result pi_comm::rx_packet()
 void pi_comm::packet_process_task(void *arg)
 {
     pi_comm *self = static_cast<pi_comm *>(arg);
+    pi2esp_packet_t packet;
+
     while (true)
     {
-        ulTaskNotifyTake(pdTRUE, portMAX_DELAY);    // Wait until at least one packet is available
-        while (self->rxpacket_buffer.count > 0)   // Process all queued packets
+        if (xQueueReceive(self->rx_queue, &packet, portMAX_DELAY) != pdTRUE)
+        {continue;}
+
+        switch (packet.inst)
         {
-            pi2esp_packet_t &packet = self->rxpacket_buffer.packets[self->rxpacket_buffer.read_idx];
-            switch (packet.inst)
+            case INST_REGISTER_TRAJECTORY:
             {
-                case INST_REGISTER_TRAJECTORY:
+                trajectory_err_t err = self->trajectory.register_trajectory(packet);
+                switch (err)
                 {
-                    trajectory_err_t err = self->trajectory.register_trajectory(packet);
-                    switch (err)
-                    {
-                        case trajectory_err_t::SUCCESS:
-                            break;
-                        case trajectory_err_t::INVALID_LENGTH:
-                            break;
-                        case trajectory_err_t::INVALID_DURATION:
-                            break;
-                        case trajectory_err_t::BUFFER_FULL:
-                            break;
-                    }
-                    break;
+                    case trajectory_err_t::SUCCESS:
+                        break;
+
+                    case trajectory_err_t::INVALID_LENGTH:
+                        break;
+
+                    case trajectory_err_t::INVALID_DURATION:
+                        break;
+
+                    case trajectory_err_t::BUFFER_FULL:
+                        break;
                 }
-                case INST_COMMAND:
-                    write_packet(packet);
-                    break;
-                case INST_STOP:
-                    break;
-                default:
-                    // Invalid instruction
-                    break;
+
+                break;
             }
-            self->rxpacket_buffer.read_idx = (self->rxpacket_buffer.read_idx + 1) % PACKET_BUFFER_SIZE;
-            self->rxpacket_buffer.count--;
+
+            case INST_COMMAND:
+                self->write_packet(packet);
+                break;
+
+            case INST_STOP:
+                break;
+
+            default:
+                // Invalid instruction
+                break;
         }
+    }
+}
+
+
+
+'''pi_tx_request_t request{};
+
+request.inst = INST_ERROR;
+request.data_len = len;
+memcpy(request.data, data, len);
+
+if (xQueueSend(tx_queue, &request, 0) != pdTRUE)
+{
+    // TX queue full
+}'''
+
+
+static int pi_comm::tx_packet(int itf)
+{
+    xQueueSend(self->rx_queue,&self->parsed_rx_packet,0) != pdTRUE
+}
+
+void pi_comm::tx_task(void *arg)
+{
+    pi_comm *self = static_cast<pi_comm *>(arg);
+    while (true)
+    {
+        ulTaskNotifyTake(pdTRUE, portMAX_DELAY);
+        tinyusb_cdcacm_write_queue(itf,data,len);
+        tinyusb_cdcacm_write_flush(itf, 0);
     }
 }
 
 void pi_comm::tx_task(void *arg)
 {
     pi_comm *self = static_cast<pi_comm *>(arg);
-    
+    esp2pi_packet_t packet;
+
+    while (true)
+    {
+        if (xQueueReceive(self->tx_queue, &packet, portMAX_DELAY) == pdTRUE)
+        {self->tx_packet(TINYUSB_CDC_ACM_0, packet);}
+    }
 }
-
-
-static int pi_comm::tx_packet(int itf)
+int pi_comm::tx_packet(int itf, const pi_tx_request_t &request)
 {
-    tinyusb_cdcacm_write_queue(itf,data,len);
+    // Build protocol packet
+    // CRC
+    // Byte stuffing
+    tinyusb_cdcacm_write_queue(itf, data, len);
     tinyusb_cdcacm_write_flush(itf, 0);
+
+    return COMM_SUCCESS;
 }
+
 
 // CRC16bit(0x8005)
 unsigned short pi_comm::updateCRC(uint16_t start, uint8_t *addr, uint16_t size)

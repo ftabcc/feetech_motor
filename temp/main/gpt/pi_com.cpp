@@ -35,149 +35,27 @@ void pi_comm::rx_callback(int itf,cdcacm_event_t *event)
     // 통신실패에 따른 처리
     switch (result)
     {
-        case COMM_SUCCESS:
+        case Comm_Result::SUCCESS:
         {
             xTaskNotifyGive(packet_process_task_handle);
             break;
         }
-        case COMM_FAIL:
+        case Comm_Result::FAIL:
             break;
-        case COMM_BUF_OVER:
+        case Comm_Result::BUF_LEN_OVER:
             break; // pi로 전달
-        case COMM_RX_CORRUPT:
+        case Comm_Result::BUF_NUM_OVER:
+            break; // pi로 전달
+        case Comm_Result::RX_CORRUPT:
             break; // 단순히 다음 패킷 기다리기
-        case COMM_RX_TIMEOUT:
+        case Comm_Result::RX_TIMEOUT:
             break; // 단순히 다음 패킷 기다리기
-        case COMM_CDC_ERR:
+        case Comm_Result::CDC_ERR:
             break; // cdc실패 단순 pi로 전달.
 
         tx_packet(); // pi로 에러 전달
     }   
 }
-//save
-int pi_comm::rx_packet(int itf)
-{
-    const uint16_t min_length       = 11;   // 프로토콜 구조상 될 수 있는 패킷의 최소 길이
-    const uint16_t max_length = 255;    // temp버퍼의 최대 길이
-    uint8_t temp[max_length];  // rx패킷을 찾기전에 잠시 저장하는 공간.
-    uint16_t temp_length        = 0;    // 현재 temp버퍼 바이트 수
-    uint16_t real_len = 0;              // packet의 실제 길이
-
-    size_t rx_size            = 0;     // cdc로 이번에 실제로 읽은 바이트 수
-    uint16_t wait_length      = min_length;   // 지금 기다리는 전체 패킷 길이 (최소 상태패킷 길이로 시작)
-
-    uint16_t idx              = 0;    // 이번에 확인하기 시작하는 바이트의 temp idx. idx이전은 헤더시작불가능 영역. 
-    bool     found            = false;// 헤더패턴 찾음 여부
-    bool     header_confirmed = false;// 헤더패턴 + 내용검증(Reserved+Length+Instruction) 검증 여부
-    const uint16_t header_len = 3;   //  FF FF FD + byte stuffing 여부 바이트(FD면 byte-stuffing)
-    int      result           = COMM_FAIL; // 종류: COMM_SUCCESS, COMM_FAIL(default), [COMM_RX_CORRUPT, COMM_BUF_OVER, COMM_RX_TIMEOUT, COMM_CDC_ERR]
-
-    while (true)
-    {
-        if (wait_length > temp_max_length)
-        {
-            result = COMM_BUF_OVER;
-            break;
-        }
-        esp_err_t ret = tinyusb_cdcacm_read(itf,&temp[temp_length],wait_length - temp_length,&rx_size); // 어느CDC,어디저장,최대저장바이트수,실제읽은 바이트 어디저장
-        if (ret != ESP_OK)
-        {
-            result = COMM_CDC_ERR;
-            break;
-        }
-
-        temp_length += rx_size;
-        if (temp_length >= wait_length)
-        {
-            if (!header_confirmed)
-            {
-                uint16_t limit = temp_length - header_len;
-                if (!found)
-                {
-                while (idx < limit) // limit이전까지만 헤더 확인 가능
-                {
-                    uint8_t *p = (uint8_t *)memchr(&temp[idx], 0xFF, (size_t)(limit - idx)); // memchr(시작주소, 찾을값, 검색할바이트수);
-                    if (p == nullptr)
-                    {
-                        idx = limit;   // 남은 구간에 0xFF 없으므로 더 볼 필요 없음
-                        break;
-                    }
-                    idx = (uint16_t)(p - temp);
-                    if ((temp[idx + 1] == 0xFF) &&(temp[idx + 2] == 0xFD) &&(temp[idx + 3] != 0xFD))
-                    {
-                        found = true;
-                        break;
-                    }
-                    idx += 1;
-                }
-                if (!found)
-                {
-                    wait_length = idx + min_length;
-                    continue;
-                }
-                }
-                
-                if (found) // 헤더패턴 확인
-                {
-                if (temp[idx + PKT_RESERVED] != 0x00 || temp[idx + PKT_LENGTH] > RXPACKET_MAX_LEN || temp[idx + PKT_INSTRUCTION] != 0x55) // 내용 검증
-                {
-                    wait_length += header_len;
-                    idx += header_len; // 헤더가 될수없는 범위에 대하여 skip
-                    found = false;
-                    continue;
-                }
-                // 헤더패턴 + 내용 검증 후 = 진짜 헤더
-                uint16_t real_len = temp[idx + PKT_LENGTH] + PKT_LENGTH + 1;
-                if (idx + real_len > temp_length)// 실제 패킷 남은거 더 받아오게 
-                {
-                    wait_length = idx + real_len;
-                    header_confirmed = true;
-                    continue;
-                }
-                header_confirmed = true;
-                }
-            }
-            if (header_confirmed)
-            {
-                uint16_t crc = (temp[temp_length-1] & 0xFF) | ((temp[temp_length-2] & 0xFF) << 8); 
-                result = (updateCRC(0, &temp[idx], temp_length - idx) == crc) ? COMM_SUCCESS : COMM_RX_CORRUPT; // updateCRC(시작값, 시작주소, 검증길이)
-                if (result == COMM_SUCCESS)
-                {
-                    pi2esp_packet_t rxpacket = rxpacket_buffer.packets[rxpacket_buffer.write_idx];
-                    rxpacket_buffer.write_idx = (rxpacket_buffer.write_idx + 1) % PACKET_BUFFER_SIZE;
-                    rxpacket_buffer.count++;
-
-                    if (!skip_stuffing)
-                    {removeStuffing(rxpacket);}
-                    rxpacket.data_len = temp[idx + PKT_LENGTH];
-                    rxpacket.inst = temp[idx + PKT_INSTRUCTION];
-                    memmove(rxpacket.data, &temp[idx+7], real_len-8); // HEAD(0xFF 0xFF 0xFD) + RSRV(!0xFD) + LEN(1) + INST(1) + DATA(N) + CRC(2)
-                }
-                break;
-            }
-        }
-        else    // temp_length < wait_length: 아직 필요한 만큼 못 받음.timeout 확인.
-        {
-            if (port->isPacketTimeout() == true)
-            {
-                if (temp_length == 0)
-                {result = COMM_RX_TIMEOUT;}
-                else
-                {result = COMM_RX_CORRUPT;}
-                break;
-            }
-        }
-        // #if defined(ESP_PLATFORM)
-        // taskYIELD()는 "같은 우선순위의 다른 태스크"에게만 양보한다. 이 태스크가 idle보다 높은 우선순위에서 계속 ready 상태라면 idle 태스크(및 watchdog feed)가 전혀 실행되지
-        // 못해 Task Watchdog reset을 유발할 수 있다. 확실히 안전하려면 최소 1 tick의 실제 delay가 필요하다. 다만 이 delay는 (특히 half-duplex 응답을 기다리는 구간에서) 왕복
-        // 타이밍에 영향을 줄 수 있으므로, tick rate를 충분히 높이거나(예: 1kHz), 응답을 이미 기다리는 도중이 아니라 유휴 구간에서만 이 폴링이 자주 발생하도록 상위 타임아웃 설계와 맞춰 사용하는 것을 권장한다.
-        vTaskDelay(1);
-    }
-
-    port->is_using_ = false;
-    return result;
-}
-
 
 int pi_comm::rx_packet(int itf)
 {
@@ -194,121 +72,117 @@ int pi_comm::rx_packet(int itf)
     bool     found            = false;// 헤더패턴 찾음 여부
     bool     header_confirmed = false;// 헤더패턴 + 내용검증(Reserved+Length+Instruction) 검증 여부
     const uint16_t header_len = 3;   //  FF FF FD + byte stuffing 여부 바이트(FD면 byte-stuffing)
-    int      result           = COMM_FAIL; // 종류: COMM_SUCCESS, COMM_FAIL(default), [COMM_RX_CORRUPT, COMM_BUF_OVER, COMM_RX_TIMEOUT, COMM_CDC_ERR]
+    int      result           = Comm_Result::FAIL; // 종류: COMM_SUCCESS, COMM_FAIL(default), [COMM_RX_CORRUPT, COMM_BUF_OVER, COMM_RX_TIMEOUT, COMM_CDC_ERR]
 
-    if (rxpacket_buffer.count >= PACKET_BUFFER_SIZE)
+    if (rxpacket_buffer.count >= RXPACKET_MAX_NUM)
+    {result Comm_Result::BUF_NUM_OVER;}
+    else
     {
-        return COMM_BUF_OVER;
-    }  
-
-    while (true)
-    {
-        if (temp_length + wait_length > sizeof(temp))
+        while (true)
         {
-            result = COMM_BUF_OVER;
-            break;
-        }
-        esp_err_t ret = tinyusb_cdcacm_read(itf,&temp[temp_length],wait_length,&rx_size); // 어느CDC,어디저장,최대저장바이트수,실제읽은 바이트 어디저장
-        if (ret != ESP_OK)
-        {
-            result = COMM_CDC_ERR;
-            break;
-        }
-
-        temp_length += rx_size;
-        if (rx_size >= wait_length)
-        {
-            if (!header_confirmed)
+            if (temp_length + wait_length > sizeof(temp))
             {
-                uint16_t limit = temp_length - header_len;
-                if (!found)
+                result = Comm_Result::BUF_LEN_OVER;
+                break;
+            }
+            esp_err_t ret = tinyusb_cdcacm_read(itf,&temp[temp_length],wait_length,&rx_size); // 어느CDC,어디저장,최대저장바이트수,실제읽은 바이트 어디저장
+            if (ret != ESP_OK)
+            {
+                result = Comm_Result::CDC_ERR;
+                break;
+            }
+
+            temp_length += rx_size;
+            if (rx_size >= wait_length)
+            {
+                if (!header_confirmed)
                 {
-                    while (idx < limit) // limit이전까지만 헤더 확인 가능
-                    {
-                        uint8_t *p = (uint8_t *)memchr(&temp[idx], 0xFF, (size_t)(limit - idx)); // memchr(시작주소, 찾을값, 검색할바이트수);
-                        if (p == nullptr)
-                        {
-                            idx = limit;   // 남은 구간에 0xFF 없으므로 더 볼 필요 없음
-                            break;
-                        }
-                        idx = (uint16_t)(p - temp);
-                        if ((temp[idx + 1] == 0xFF) &&(temp[idx + 2] == 0xFD) &&(temp[idx + 3] != 0x00))
-                        {
-                            found = true;
-                            break;
-                        }
-                        idx += 1;
-                    }
+                    uint16_t limit = temp_length - header_len;
                     if (!found)
                     {
-                        wait_length = idx + min_length - temp_length; // must be min_length
+                        while (idx < limit) // limit이전까지만 헤더 확인 가능
+                        {
+                            uint8_t *p = (uint8_t *)memchr(&temp[idx], 0xFF, (size_t)(limit - idx)); // memchr(시작주소, 찾을값, 검색할바이트수);
+                            if (p == nullptr)
+                            {
+                                idx = limit;   // 남은 구간에 0xFF 없으므로 더 볼 필요 없음
+                                break;
+                            }
+                            idx = (uint16_t)(p - temp);
+                            if ((temp[idx + 1] == 0xFF) &&(temp[idx + 2] == 0xFD) &&(temp[idx + 3] == 0x00))
+                            {
+                                found = true;
+                                break;
+                            }
+                            idx += 1;
+                        }
+                        if (!found)
+                        {
+                            wait_length = idx + min_length - temp_length; // must be min_length
+                            continue;
+                        }
+                    }
+                    
+                    if (found) // 헤더패턴 확인
+                    {
+                        if (temp[idx + PKT_RESERVED] != 0x00 // stuffing 
+                            || temp[idx + PKT_LENGTH] + 8 > RXPACKET_MAX_LEN // packet_len = data(n) + 8
+                            || temp[idx + PKT_INSTRUCTION] != 0x55) // 0x55 = reply inst
+                        {
+                            idx += header_len; // 헤더가 될수없는 범위에 대하여 skip
+                            wait_length = idx + min_length - temp_length;
+                            found = false;
+                        }
+                        else 
+                        {
+                            packet_len = temp[idx + PKT_LENGTH] + 8;
+                            if (idx + packet_len > temp_length)// 실제 패킷 남은거 더 받아오게 
+                            {wait_length = idx + packet_len - temp_length;}
+                            header_confirmed = true;
+                        }
                         continue;
                     }
                 }
-                
-                if (found) // 헤더패턴 확인
+                if (header_confirmed)
                 {
-                    if (temp[idx + PKT_RESERVED] != 0x00 // stuffing 
-                         || temp[idx + PKT_LENGTH] + 8 > RXPACKET_MAX_LEN // packet_len = data(n) + 8
-                         || temp[idx + PKT_INSTRUCTION] != 0x55) // 0x55 = reply inst
+                    uint16_t crc = (temp[temp_length-1] & 0xFF) | ((temp[temp_length-2] & 0xFF) << 8); 
+                    result = (updateCRC(0, &temp[idx], packet_len - 2) == crc) ? Comm_Result::SUCCESS : Comm_Result::RX_CORRUPT; // updateCRC(시작값, 시작주소, 검증길이)
+                    if (result == Comm_Result::SUCCESS)
                     {
-                        idx += header_len; // 헤더가 될수없는 범위에 대하여 skip
-                        wait_length = idx + min_length - temp_length;
-                        found = false;
-                    }
-                    else 
-                    {
-                        packet_len = temp[idx + PKT_LENGTH] + 8;
-                        if (idx + packet_len > temp_length)// 실제 패킷 남은거 더 받아오게 
-                        {wait_length = idx + packet_len - temp_length;}
-                        header_confirmed = true;
-                    }
-                    continue;
-                }
-            }
-            if (header_confirmed)
-            {
-                uint16_t crc = (temp[temp_length-1] & 0xFF) | ((temp[temp_length-2] & 0xFF) << 8); 
-                result = (updateCRC(0, &temp[idx], packet_len - 2) == crc) ? COMM_SUCCESS : COMM_RX_CORRUPT; // updateCRC(시작값, 시작주소, 검증길이)
-                if (result == COMM_SUCCESS)
-                {
-                    pi2esp_packet_t &rxpacket = rxpacket_buffer.packets[rxpacket_buffer.write_idx];
-                    
-                    memcpy(rxpacket.data, &temp[idx+6], packet_len-8); // HEAD(0xFF 0xFF 0xFD) + RSRV(!0xFD) + LEN(1) + INST(1) + DATA(N) + CRC(2)
-                    rxpacket.data_len = packet_len - 8;
-                    rxpacket.inst = temp[idx + PKT_INSTRUCTION];
+                        pi2esp_packet_t &rxpacket = rxpackets.packets[rxpackets.write_idx];
+                        
+                        memcpy(rxpacket.data, &temp[idx+6], packet_len-8); // HEAD(0xFF 0xFF 0xFD) + RSRV(!0xFD) + LEN(1) + INST(1) + DATA(N) + CRC(2)
+                        rxpacket.data_len = packet_len - 8;
+                        rxpacket.inst = temp[idx + PKT_INSTRUCTION];
 
-                    if (!skip_stuffing)
-                    {
                         result = unstuffing(rxpacket.data,&rxpacket.data_len);
-                        if (result != COMM_SUCCESS)
+                        if (result != Comm_Result::SUCCESS)
                         {break;}
+
+                        rxpackets.write_idx = (rxpackets.write_idx + 1) % RXPACKET_MAX_NUM;
+                        rxpackets.count++;
                     }
-
-                    rxpacket_buffer.write_idx = (rxpacket_buffer.write_idx + 1) % PACKET_BUFFER_SIZE;
-                    rxpacket_buffer.count++;
+                    break;
                 }
-                break;
             }
-        }
-        else    // temp_length < wait_length: 아직 필요한 만큼 못 받음.timeout 확인.
-        {
-            if (port->isPacketTimeout() == true)
+            else    // temp_length < wait_length: 아직 필요한 만큼 못 받음.timeout 확인.
             {
-                if (temp_length == 0)
-                {result = COMM_RX_TIMEOUT;}
-                else
-                {result = COMM_RX_CORRUPT;}
-                break;
+                if (port->isPacketTimeout() == true)
+                {
+                    if (temp_length == 0)
+                    {result = Comm_Result::RX_TIMEOUT;}
+                    else
+                    {result = Comm_Result::RX_CORRUPT;}
+                    break;
+                }
             }
+            // #if defined(ESP_PLATFORM)
+            // taskYIELD()는 "같은 우선순위의 다른 태스크"에게만 양보한다. 이 태스크가 idle보다 높은 우선순위에서 계속 ready 상태라면 idle 태스크(및 watchdog feed)가 전혀 실행되지
+            // 못해 Task Watchdog reset을 유발할 수 있다. 확실히 안전하려면 최소 1 tick의 실제 delay가 필요하다. 다만 이 delay는 (특히 half-duplex 응답을 기다리는 구간에서) 왕복
+            // 타이밍에 영향을 줄 수 있으므로, tick rate를 충분히 높이거나(예: 1kHz), 응답을 이미 기다리는 도중이 아니라 유휴 구간에서만 이 폴링이 자주 발생하도록 상위 타임아웃 설계와 맞춰 사용하는 것을 권장한다.
+            vTaskDelay(1);
         }
-        // #if defined(ESP_PLATFORM)
-        // taskYIELD()는 "같은 우선순위의 다른 태스크"에게만 양보한다. 이 태스크가 idle보다 높은 우선순위에서 계속 ready 상태라면 idle 태스크(및 watchdog feed)가 전혀 실행되지
-        // 못해 Task Watchdog reset을 유발할 수 있다. 확실히 안전하려면 최소 1 tick의 실제 delay가 필요하다. 다만 이 delay는 (특히 half-duplex 응답을 기다리는 구간에서) 왕복
-        // 타이밍에 영향을 줄 수 있으므로, tick rate를 충분히 높이거나(예: 1kHz), 응답을 이미 기다리는 도중이 아니라 유휴 구간에서만 이 폴링이 자주 발생하도록 상위 타임아웃 설계와 맞춰 사용하는 것을 권장한다.
-        vTaskDelay(1);
     }
-
     port->is_using_ = false;
     return result;
 }
@@ -340,7 +214,7 @@ void pi_comm::packet_process_task(void *arg)
                     }
                     break;
                 }
-                case INST_MOTOR_TRANSFER:
+                case INST_COMMAND:
                     write_packet(packet);
                     break;
                 case INST_STOP:
@@ -354,6 +228,14 @@ void pi_comm::packet_process_task(void *arg)
         }
     }
 }
+
+void pi_comm::tx_task(void *arg)
+{
+    pi_comm *self = static_cast<pi_comm *>(arg);
+    
+
+}
+
 
 static int pi_comm::tx_packet(int itf)
 {
@@ -395,91 +277,95 @@ unsigned short pi_comm::updateCRC(uint16_t start, uint8_t *addr, uint16_t size)
   return crc_accum;
 }
 
-
 int pi_comm::stuffing(uint8_t *data, int *len)
 {   // 1차 탐색 2차 뒤부터 채우기(다이나믹셀 방식) vs 탐색하며 별도메모리에 추가하며 채우기
-    if (data == nullptr || len == nullptr)
-        return COMM_FAIL;
-
-    // Too short to contain FF FF FD
-    if (*len < 3)
-        return COMM_SUCCESS;
-
-    // 1st pass: Count required stuffing bytes
-    int stuffing_count = 0;
-    for (int i = 0; i + 2 < *len; i++)
+    if (!skip_stuffing)
     {
-        if (data[i] == 0xFF && data[i + 1] == 0xFF && data[i + 2] == 0xFD)
-        {stuffing_count++;}
-    }
+        
+        if (data == nullptr || len == nullptr)
+            return COMM_FAIL;
 
-    // No stuffing required
-    if (stuffing_count == 0)
-        return COMM_SUCCESS;
+        // Too short to contain FF FF FD
+        if (*len < 3)
+            return COMM_SUCCESS;
 
-    // Check output buffer capacity
-    if (*len + stuffing_count > RXPACKET_MAX_LEN - 8)
-        return COMM_BUF_OVER;
-
-    int read_idx = *len - 1;
-    int write_idx = *len + stuffing_count - 1;
-
-    // 2nd pass: Move data backward and insert FD
-    while (read_idx >= 0)
-    {
-        // FF FF FD
-        if (read_idx >= 2 && data[read_idx - 2] == 0xFF && data[read_idx - 1] == 0xFF && data[read_idx] == 0xFD)
+        // 1st pass: Count required stuffing bytes
+        int stuffing_count = 0;
+        for (int i = 0; i + 2 < *len; i++)
         {
-            // Add stuffing byte
-            data[write_idx--] = 0xFD;
-
-            // Move original FF FF FD
-            data[write_idx--] = data[read_idx--]; // FD
-            data[write_idx--] = data[read_idx--]; // FF
-            data[write_idx--] = data[read_idx--]; // FF
+            if (data[i] == 0xFF && data[i + 1] == 0xFF && data[i + 2] == 0xFD)
+            {stuffing_count++;}
         }
-        else
-        {data[write_idx--] = data[read_idx--];}// Move normal byte
+
+        // No stuffing required
+        if (stuffing_count == 0)
+            return COMM_SUCCESS;
+
+        // Check output buffer capacity
+        if (*len + stuffing_count > RXPACKET_MAX_LEN - 8)
+            return COMM_BUF_OVER;
+
+        int read_idx = *len - 1;
+        int write_idx = *len + stuffing_count - 1;
+
+        // 2nd pass: Move data backward and insert FD
+        while (read_idx >= 0)
+        {
+            // FF FF FD
+            if (read_idx >= 2 && data[read_idx - 2] == 0xFF && data[read_idx - 1] == 0xFF && data[read_idx] == 0xFD)
+            {
+                // Add stuffing byte
+                data[write_idx--] = 0xFD;
+
+                // Move original FF FF FD
+                data[write_idx--] = data[read_idx--]; // FD
+                data[write_idx--] = data[read_idx--]; // FF
+                data[write_idx--] = data[read_idx--]; // FF
+            }
+            else
+            {data[write_idx--] = data[read_idx--];}// Move normal byte
+        }
+
+        // Update length
+        *len += stuffing_count;
     }
 
-    // Update length
-    *len += stuffing_count;
     return COMM_SUCCESS;
 }
 
 int pi_comm::unstuffing(uint8_t *data, int *len)
 {
-    if (data == nullptr || len == nullptr)
-        return COMM_FAIL;
-
-    // Invalid length
-    if (*len < 0)
-        return COMM_FAIL;
-
-    // Too short to contain FF FF FD FD
-    if (*len < 4)
-        return COMM_SUCCESS;
-
-    int read_idx = 0;
-    int write_idx = 0;
-
-    // Read from front and compact in-place
-    while (read_idx < *len)
+    if (!skip_stuffing)
     {
-        // FF FF FD FD
-        if (read_idx + 3 < *len && data[read_idx] == 0xFF && data[read_idx + 1] == 0xFF && data[read_idx + 2] == 0xFD && data[read_idx + 3] == 0xFD)
+        if (data == nullptr || len == nullptr || *len < 0)
+            return COMM_FAIL;
+
+        // Too short to contain FF FF FD FD
+        if (*len < 4)
+            return COMM_SUCCESS;
+
+        int read_idx = 0;
+        int write_idx = 0;
+
+        // Read from front and compact in-place
+        while (read_idx < *len)
         {
-            // Copy original FF FF FD
-            data[write_idx++] = data[read_idx++];
-            data[write_idx++] = data[read_idx++];
-            data[write_idx++] = data[read_idx++];
-            read_idx++; // Skip stuffed FD
+            // FF FF FD FD
+            if (read_idx + 3 < *len && data[read_idx] == 0xFF && data[read_idx + 1] == 0xFF && data[read_idx + 2] == 0xFD && data[read_idx + 3] == 0xFD)
+            {
+                // Copy original FF FF FD
+                data[write_idx++] = data[read_idx++];
+                data[write_idx++] = data[read_idx++];
+                data[write_idx++] = data[read_idx++];
+                read_idx++; // Skip stuffed FD
+            }
+            else
+            {data[write_idx++] = data[read_idx++];} // Move normal byte
         }
-        else
-        {data[write_idx++] = data[read_idx++];} // Move normal byte
+
+        // Update length
+        *len = write_idx;
     }
 
-    // Update length
-    *len = write_idx;
     return COMM_SUCCESS;
 }

@@ -6,6 +6,8 @@
 #include "freertos/task.h"
 #include "tusb_cdc_acm.h"
 
+#include "trajectory.h"
+
 // esp<->pi protocol
 
 
@@ -21,24 +23,29 @@ typedef struct
 
 typedef struct
 {
-    pi2esp_packet_t packets[PACKET_BUFFER_SIZE];
+    pi2esp_packet_t packets[RXPACKET_MAX_NUM];
     size_t write_idx;
     size_t read_idx;
     size_t count;
-} pi2esp_packet_buffer_t;
+} pi2esp_packets_t;
 
 typedef struct
 {
     size_t data_len;
-    int inst;
-    int err; // for emergency stop
+    int inst = 55; //reply inst
+    int err;
     uint8_t data[TXPACKET_MAX_LEN-9];
     int crc;
 } esp2pi_packet_t;
 // HEAD(0xFF 0xFF 0xFD) + RSRV(!0xFD) + LEN(1) + INST(1) + ERR(1) + DATA(N) + CRC(2:L,H) = N+9(N>=0)
 
-
-
+typedef struct
+{
+    esp2pi_packet_t packets[TXPACKET_MAX_NUM];
+    size_t write_idx;
+    size_t read_idx;
+    size_t count;
+} esp2pi_packets_t;
 
 class pi_comm
 {
@@ -46,12 +53,15 @@ public:
     static void init();
 
 private:
+    // packet size
     static constexpr uint16_t RXPACKET_MAX_LEN = 100; // rxpacket_len = data(n) + 8
     static constexpr uint16_t TXPACKET_MAX_LEN = 100; // txpacket_len = data(n) + 9
+    // packet buffer size
+    static constexpr uint16_t RXPACKET_MAX_NUM = 100;
+    static constexpr uint16_t TXPACKET_MAX_NUM = 100;
     
-    #define PACKET_BUFFER_SIZE 8
 
-// HEAD(0xFF 0xFF 0xFD) + RSRV(!0xFD) + LEN(1) + INST(1) + DATA(N) + CRC(2:L,H) = N+8(N>=0)
+    // HEAD(0xFF 0xFF 0xFD) + RSRV(!0xFD) + LEN(1) + INST(1) + DATA(N) + CRC(2:L,H) = N+8(N>=0)
     #define PKT_RESERVED = 3
     #define PKT_LENGTH = 4
     #define PKT_INSTRUCTION = 5
@@ -67,16 +77,22 @@ private:
     {
         SUCCESS = 0,
         FAIL = 1,
-        BUF_OVER = 2,
-        RX_CORRUPT = 3,
-        RX_TIMEOUT = 4,
-        CDC_ERR = 5
+        BUF_LEN_OVER = 2,
+        BUF_NUM_OVER = 3,
+        RX_CORRUPT = 4,
+        RX_TIMEOUT = 5,
+        CDC_ERR = 6
     };
+
+    enum class Inst_Result
+    {
+
+    }
 
 
 private:
-    pi2esp_packet_buffer_t rxpacket_buffer;
-    esp2pi_packet_t txpacket;
+    pi2esp_packets_t rxpackets;
+    esp2pi_packets_t txpackets;
 
     static void rx_callback(int itf,cdcacm_event_t *event);
     static void packet_process_task(void *arg);

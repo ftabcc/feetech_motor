@@ -309,7 +309,7 @@ void pi_comm::tx_task(void *arg)
     while (true)
     {
         if (xQueueReceive(self->tx_queue, &txpacket, portMAX_DELAY) == pdTRUE)
-        {self->tx_packet();}
+        {self->tx_packet(&txpacket);}
     }
 }
 

@@ -67,14 +67,31 @@ void pi_comm::rx_task(void *arg)
     while (true)
     {
         ulTaskNotifyTake(pdTRUE, portMAX_DELAY);
+        // '''timeout확인 필요'''
+        //     if (self->rx_buffer_length > 0 &&
+        //         self->port->isPacketTimeout())
+        //     {
+        //         self->rx_buffer_length = 0;
+        //         self->rx_packet_len = 0;
+
+        //         self->rx_debug_buffer.dump();
+        //         self->rx_debug_buffer.clear();
+
+        //         self->tx_packet();  // Send RX timeout error
+
+        //         break;
+        //     }
+
         while (self->rx_parse_buffer.available() > 0)
         {
-            '''timeout확인 필요'''
+            
+
             Comm_Result result = self->rx_packet(rxpacket;);
             if (result == Comm_Result::NEED_MORE_DATA)
             {break;}
             if (result == Comm_Result::SUCCESS)
             {
+                self->rx_debug_buffer.clear()
                 if (xQueueSend(self->rx_queue,&self->rxpacket,0) != pdTRUE) // (,,꽉 차면 대기할 시간)
                 {
                     // RX packet queue full
@@ -96,6 +113,7 @@ pi_protocol::Comm_Result pi_comm::rx_packet(pi_protocol::rxpacket_t &rxpacket)
 
     while (rx_parse_buffer.read(byte)) // read one byte
     {
+        rx_debug_buffer.write(&byte, 1);
         if (rx_parse_length < HEADER_LEN)
         {
             switch (rx_parse_length)

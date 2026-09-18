@@ -133,11 +133,9 @@ Comm_Result pi_comm::rx_packet()
                         rx_parse_buffer[2] = byte;
                         rx_parse_length = 3;
                     }
-                    else if (byte == 0xFF)
+                    else if (byte == 0xFF) // can be 2nd of a new header
                     {
-                        // FF FF FF → 마지막 FF를 새로운 시작으로 사용
-                        rx_parse_buffer[1] = 0xFF;
-                        rx_parse_length = 2;
+                        break;
                     }
                     else
                     {
@@ -152,10 +150,9 @@ Comm_Result pi_comm::rx_packet()
                         rx_parse_buffer[3] = byte;
                         rx_parse_length = 4;
                     }
-                    else if (byte == 0xFF)
+                    else if (byte == 0xFF) // can be 1st of a new header
                     {
-                        // FF FF FD FF → 이 FF를 새로운 header 시작으로 사용
-                        rx_parse_buffer[0] = 0xFF;
+                        rx_parse_buffer[0] = 0xFF; 
                         rx_parse_length = 1;
                     }
                     else
@@ -172,12 +169,12 @@ Comm_Result pi_comm::rx_packet()
         if (rx_parse_length == 4)
         {
             rx_parse_buffer[4] = byte;
-            rx_packet_len = static_cast<uint16_t>(byte) + 8;
+            rx_packet_len = static_cast<uint16_t>(byte) + 8; // rxpacket_len = data(n) + 8
             if (rx_packet_len < MIN_PACKET_LEN || rx_packet_len > RXPACKET_MAX_LEN) // invalid packet length
             {
                 rx_parse_length = 0;
                 rx_packet_len = 0;
-                if (byte == 0xFF) // Current byte can be the start of a new header
+                if (byte == 0xFF) // can be 1st of a new header
                 {
                     rx_parse_buffer[0] = byte;
                     rx_parse_length = 1;
@@ -190,12 +187,11 @@ Comm_Result pi_comm::rx_packet()
         // Read INSTRUCTION
         if (rx_parse_length == 5)
         {
-            // 0x55 = reply instruction
-            if (byte != 0x55)
+            if (byte != 0x55) // 0x55 = reply instruction
             {
                 rx_parse_length = 0;
                 rx_packet_len = 0;
-                if (byte == 0xFF) // Current byte can be the start of a new header
+                if (byte == 0xFF) // can be 1st of a new header
                 {
                     rx_parse_buffer[0] = byte;
                     rx_parse_length = 1;
@@ -209,26 +205,21 @@ Comm_Result pi_comm::rx_packet()
 
         if (rx_parse_length < rx_packet_len) // Read DATA + CRC
         {rx_parse_buffer[rx_parse_length++] = byte;}
-
         if (rx_parse_length < rx_packet_len)// Packet not complete yet
         {continue;}
+        
         // CRC check
         uint16_t crc = static_cast<uint16_t>(rx_parse_buffer[rx_packet_len - 2]) | (static_cast<uint16_t>(rx_parse_buffer[rx_packet_len - 1]) << 8);
         uint16_t calculated_crc = updateCRC(0, rx_parse_buffer, rx_packet_len - 2);
+
         if (calculated_crc != crc)
         {
             rx_parse_length = 0;
             rx_packet_len = 0;
             return Comm_Result::RX_CORRUPT;
         }
-        if (rxpackets.count >= RXPACKET_MAX_NUM) // RX packet buffer full
-        {
-            rx_parse_length = 0;
-            rx_packet_len = 0;
-            return Comm_Result::BUF_NUM_OVER;
-        }
 
-        pi2esp_packet_t &rxpacket = rxpackets.packets[rxpackets.write_idx];
+        pi2esp_packet_t rxpacket{};
         rxpacket.data_len = rx_packet_len - 8;
         rxpacket.inst = rx_parse_buffer[PKT_INSTRUCTION];
 
@@ -241,7 +232,6 @@ Comm_Result pi_comm::rx_packet()
 
         memcpy(rxpacket.data,&rx_parse_buffer[6],rxpacket.data_len);
         Comm_Result result = unstuffing(rxpacket.data, &rxpacket.data_len);
-
         if (result != Comm_Result::SUCCESS)
         {
             rx_parse_length = 0;
@@ -249,17 +239,19 @@ Comm_Result pi_comm::rx_packet()
             return result;
         }
 
-        rxpackets.write_idx = (rxpackets.write_idx + 1) % RXPACKET_MAX_NUM;
-        rxpackets.count++;
+        if (xQueueSend(rx_queue, &rxpacket, 0) != pdTRUE)
+        {
+            rx_parse_length = 0;
+            rx_packet_len = 0;
+            return Comm_Result::BUF_NUM_OVER;
+        }
+
         // Reset parser for next packet
         rx_parse_length = 0;
         rx_packet_len = 0;
+
         return Comm_Result::SUCCESS;
     }
-    // Ring buffer became empty before a complete packet arrived
-    return Comm_Result::NEED_MORE_DATA;
-}
-
 
 // save
 int pi_comm::rx_packet(int itf)

@@ -83,6 +83,7 @@ private:
     uint16_t rx_parse_length = 0;
     uint16_t rx_packet_len = 0;
     static constexpr uint16_t RX_DEBUG_BUFFER_SIZE = 512;
+    //need to include 
     RingBuffer rx_debug_buffer{RX_DEBUG_BUFFER_SIZE};
 
     

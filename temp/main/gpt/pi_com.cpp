@@ -40,11 +40,11 @@ void pi_comm::rx_callback(int itf, cdcacm_event_t *event)
     esp_err_t ret = tinyusb_cdcacm_read(itf, temp, sizeof(temp), &rx_size);
     if (ret != ESP_OK)
     {
-        return;
+        return; // CDC err
     } 
     if (rx_size == 0)
     {
-        return;
+        return; // nothing read
     }
     
     if (rx_parse_buffer.write(temp, rx_size) != rx_size)
@@ -58,7 +58,6 @@ void pi_comm::rx_callback(int itf, cdcacm_event_t *event)
     }
     xTaskNotifyGive(rx_task_handle);
 }
-
 
 void pi_comm::rx_task(void *arg)
 {
@@ -82,7 +81,7 @@ void pi_comm::rx_task(void *arg)
         //         break;
         //     }
 
-        while (self->rx_parse_buffer.available() > 0)
+        while (self->rx_parse_buffer.available() > 0)//꼭 한 바이트씩 읽어야하나?
         {
             
 
@@ -97,7 +96,7 @@ void pi_comm::rx_task(void *arg)
                     // RX packet queue full
                 }
             }
-            else
+            else // Comm_Result
             {
                 self->tx_packet();
             }

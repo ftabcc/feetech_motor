@@ -67,8 +67,7 @@ void pi_comm::rx_task(void *arg)
     {
         ulTaskNotifyTake(pdTRUE, portMAX_DELAY);
         // '''timeout확인 필요'''
-        //     if (self->rx_buffer_length > 0 &&
-        //         self->port->isPacketTimeout())
+        //     if (self->rx_buffer_length > 0 && self->port->isPacketTimeout())
         //     {
         //         self->rx_buffer_length = 0;
         //         self->rx_packet_len = 0;

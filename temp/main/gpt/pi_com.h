@@ -27,18 +27,20 @@ namespace pi_protocol
     constexpr uint16_t RXPACKET_MAX_NUM = 100;
     constexpr uint16_t TXPACKET_MAX_NUM = 100;
     
-    // rxpacket_len = DATA(N) + 8 (FF FF FD 00 LEN INST DATA CRC_L CRC_H)
+    // rxpacket_len = DATA(N) + 9 (FF FF FD 00 LEN ID INST DATA CRC_L CRC_H)
     typedef struct
     {
-        uint16_t data_len;
+        uint8_t data_len;
+        uint16_t request_id;
         uint8_t inst;
         uint8_t data[pi_protocol::RXPACKET_MAX_LEN - 8];
     } rxpacket_t;
 
-    // txpacket_len = DATA(N) + 9 (FF FF FD 00 LEN INST ERR DATA CRC_L CRC_H)
+    // txpacket_len = DATA(N) + 10 (FF FF FD 00 LEN ID INST ERR DATA CRC_L CRC_H)
     typedef struct
     {
-        uint16_t data_len;
+        uint8_t data_len;
+        uint16_t request_id;
         uint8_t inst;
         uint8_t err;
         uint8_t data[pi_protocol::TXPACKET_MAX_LEN - 9];
@@ -47,7 +49,7 @@ namespace pi_protocol
     // INST
     enum class Inst : uint8_t
     {
-        REGISTER_TRAJECTORY = 0x01,
+        REGISTER_TRAJECTORY  = 0x01,
         WRITE                = 0x02,
         STOP                 = 0x03
     };
@@ -63,9 +65,7 @@ namespace pi_protocol
         RX_TIMEOUT     = 6,
         CDC_ERR        = 7
     };
-
 }
-
 
 class pi_comm
 {

@@ -82,8 +82,6 @@ void pi_comm::rx_task(void *arg)
 
         while (self->rx_parse_buffer.available() > 0)//꼭 한 바이트씩 읽어야하나?
         {
-            
-
             Comm_Result result = self->rx_packet(rxpacket;);
             if (result == Comm_Result::NEED_MORE_DATA)
             {break;}

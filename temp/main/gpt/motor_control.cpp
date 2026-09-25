@@ -16,7 +16,7 @@ void init()
     ESP_ERROR_CHECK(uart_param_config(UART_PORT, &uart_config)); // 설정 
     ESP_ERROR_CHECK(uart_set_pin(UART_PORT,UART_TX_PIN,UART_RX_PIN,UART_PIN_NO_CHANGE,UART_PIN_NO_CHANGE)); // 핀 지정
     ESP_ERROR_CHECK(uart_driver_install(UART_PORT,1024,1024,0,NULL,0)); // 설치
-    ESP_ERROR_CHECK(uart_driver_install(UART_PORT,1024,1024,20,&uart_queue,0));
+    // ESP_ERROR_CHECK(uart_driver_install(UART_PORT,1024,1024,20,&uart_queue,0));
 
     // read task
     xTaskCreate(rx_task,"rx_task",4096,NULL,10,NULL);

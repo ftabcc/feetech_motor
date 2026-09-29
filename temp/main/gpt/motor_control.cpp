@@ -185,7 +185,7 @@ void tx_packet(void *arg)
 
     while (true)
     {
-        // Run at fixed period
+        // Run at fixed period??
         vTaskDelayUntil(&last_wake_time, control_period);
         if (trajectory->read_idx == trajectory->write_idx)
         {

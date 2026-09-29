@@ -80,11 +80,11 @@ private:
     // TaskHandle_t tx_task_handle = nullptr;
 
     uint8_t rx_parse_buffer[pi_protocol::RXPACKET_MAX_LEN]{};
-    uint16_t rx_parse_length = 0;
-    uint16_t rx_packet_len = 0;
+    uint8_t rx_parse_length = 0;
+    uint8_t rx_packet_len = 0;
     static constexpr uint16_t RX_DEBUG_BUFFER_SIZE = 512;
     //need to include 
-    RingBuffer rx_debug_buffer{RX_DEBUG_BUFFER_SIZE};
+    RingBuffer<uint8_t> rx_debug_buffer{RX_DEBUG_BUFFER_SIZE};
 
     
     static void rx_callback(int itf, cdcacm_event_t *event);

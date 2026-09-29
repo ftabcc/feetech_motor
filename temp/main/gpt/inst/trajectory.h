@@ -23,6 +23,7 @@ typedef struct {
     size_t count;
 } trajectory_t;
 
+
 enum class trajectory_err_t
 {
     SUCCESS = 0,
@@ -35,6 +36,7 @@ class Trajectory
 {
 public:
     trajectory_t trajectory;
+    // RingBuffer<waypoint_t> trajectory(TRAJECTORY_BUFFER_SIZE);
     trajectory_err_t register_trajectory(pi_rx_packet_t *rxpacket);
     
 private:

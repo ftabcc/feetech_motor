@@ -47,9 +47,9 @@ void pi_comm::rx_callback(int itf, cdcacm_event_t *event)
         return; // nothing read
     }
     
-    if (rx_parse_buffer.write(temp, rx_size) != rx_size)
+    if (rx_buffer.write(temp, rx_size) != rx_size)
     {
-        // parse buffer overflow
+        // rx buffer overflow
         return;
     }
     if (rx_debug_buffer.write(temp, rx_size) != rx_size)
@@ -80,7 +80,7 @@ void pi_comm::rx_task(void *arg)
         //         break;
         //     }
 
-        while (self->rx_parse_buffer.available() > 0)//꼭 한 바이트씩 읽어야하나?
+        while (self->rx_buffer.available() > 0)
         {
             Comm_Result result = self->rx_packet(rxpacket;);
             if (result == Comm_Result::NEED_MORE_DATA)
@@ -104,22 +104,22 @@ void pi_comm::rx_task(void *arg)
 pi_protocol::Comm_Result pi_comm::rx_packet(pi_protocol::rxpacket_t &rxpacket)
 {
     constexpr uint16_t HEADER_LEN = 4;
-    constexpr uint16_t MIN_PACKET_LEN = 11;
+    constexpr uint16_t MIN_PACKET_LEN = 11; // rxpacket_len = DATA(N) + 9 (FF FF FD 00 LEN ID INST DATA CRC_L CRC_H)
     uint8_t byte = 0;
 
-    while (rx_parse_buffer.read(byte)) // read one byte
+    while (rx_buffer.read(byte)) // read one byte
     {
         rx_debug_buffer.write(&byte, 1);
-        if (rx_parse_length < HEADER_LEN)
+        if (rx_parse_len < HEADER_LEN)
         {
-            switch (rx_parse_length)
+            switch (rx_parse_len)
             {
                 case 0:
                 {
                     if (byte == 0xFF)
                     {
                         rx_parse_buffer[0] = byte;
-                        rx_parse_length = 1;
+                        rx_parse_len = 1;
                     }
                     break;
                 }
@@ -128,11 +128,11 @@ pi_protocol::Comm_Result pi_comm::rx_packet(pi_protocol::rxpacket_t &rxpacket)
                     if (byte == 0xFF)
                     {
                         rx_parse_buffer[1] = byte;
-                        rx_parse_length = 2;
+                        rx_parse_len = 2;
                     }
                     else
                     {
-                        rx_parse_length = 0;
+                        rx_parse_len = 0;
                     }
                     break;
                 }
@@ -141,7 +141,7 @@ pi_protocol::Comm_Result pi_comm::rx_packet(pi_protocol::rxpacket_t &rxpacket)
                     if (byte == 0xFD)
                     {
                         rx_parse_buffer[2] = byte;
-                        rx_parse_length = 3;
+                        rx_parse_len = 3;
                     }
                     else if (byte == 0xFF) // can be 2nd of a new header
                     {
@@ -149,7 +149,7 @@ pi_protocol::Comm_Result pi_comm::rx_packet(pi_protocol::rxpacket_t &rxpacket)
                     }
                     else
                     {
-                        rx_parse_length = 0;
+                        rx_parse_len = 0;
                     }
                     break;
                 }
@@ -158,16 +158,16 @@ pi_protocol::Comm_Result pi_comm::rx_packet(pi_protocol::rxpacket_t &rxpacket)
                     if (byte == 0x00)
                     {
                         rx_parse_buffer[3] = byte;
-                        rx_parse_length = 4;
+                        rx_parse_len = 4;
                     }
                     else if (byte == 0xFF) // can be 1st of a new header
                     {
                         rx_parse_buffer[0] = 0xFF; 
-                        rx_parse_length = 1;
+                        rx_parse_len = 1;
                     }
                     else
                     {
-                        rx_parse_length = 0;
+                        rx_parse_len = 0;
                     }
                     break;
                 }
@@ -176,46 +176,46 @@ pi_protocol::Comm_Result pi_comm::rx_packet(pi_protocol::rxpacket_t &rxpacket)
         }
 
         // Read LENGTH
-        if (rx_parse_length == 4)
+        if (rx_parse_len == 4)
         {
             rx_parse_buffer[4] = byte;
-            rx_packet_len = static_cast<uint16_t>(byte) + 8; // rxpacket_len = data(n) + 8
+            rx_packet_len = byte + 9; // rxpacket_len = DATA(N) + 9 (FF FF FD 00 LEN ID INST DATA CRC_L CRC_H)
             if (rx_packet_len < MIN_PACKET_LEN || rx_packet_len > pi_protocol::RXPACKET_MAX_LEN) // invalid packet length
             {
-                rx_parse_length = 0;
+                rx_parse_len = 0;
                 rx_packet_len = 0;
                 if (byte == 0xFF) // can be 1st of a new header
                 {
                     rx_parse_buffer[0] = byte;
-                    rx_parse_length = 1;
+                    rx_parse_len = 1;
                 }
                 continue;
             }
-            rx_parse_length = 5;
+            rx_parse_len = 5;
             continue;
         }
         // Read INSTRUCTION
-        if (rx_parse_length == 5)
+        if (rx_parse_len == 5)
         {
             if (byte != 0x55) // 0x55 = reply instruction
             {
-                rx_parse_length = 0;
+                rx_parse_len = 0;
                 rx_packet_len = 0;
                 if (byte == 0xFF) // can be 1st of a new header
                 {
                     rx_parse_buffer[0] = byte;
-                    rx_parse_length = 1;
+                    rx_parse_len = 1;
                 }
                 continue;
             }
             rx_parse_buffer[5] = byte;
-            rx_parse_length = 6;
+            rx_parse_len = 6;
             continue;
         }
 
-        if (rx_parse_length < rx_packet_len) // Read DATA + CRC
-        {rx_parse_buffer[rx_parse_length++] = byte;}
-        if (rx_parse_length < rx_packet_len)// Packet not complete yet
+        if (rx_parse_len < rx_packet_len) // Read DATA + CRC
+        {rx_parse_buffer[rx_parse_len++] = byte;}
+        if (rx_parse_len < rx_packet_len)// Packet not complete yet
         {continue;}
         
         // CRC check
@@ -224,14 +224,14 @@ pi_protocol::Comm_Result pi_comm::rx_packet(pi_protocol::rxpacket_t &rxpacket)
 
         if (calculated_crc != crc)
         {
-            rx_parse_length = 0;
+            rx_parse_len = 0;
             rx_packet_len = 0;
             return Comm_Result::RX_CORRUPT;
         }
 
         if (rx_packet_len - 8 > sizeof(rxpacket.data))
         {
-            rx_parse_length = 0;
+            rx_parse_len = 0;
             rx_packet_len = 0;
             return Comm_Result::BUF_LEN_OVER;
         }
@@ -242,13 +242,13 @@ pi_protocol::Comm_Result pi_comm::rx_packet(pi_protocol::rxpacket_t &rxpacket)
         Comm_Result result = unstuffing(rxpacket.data, &rxpacket.data_len);
         if (result != Comm_Result::SUCCESS)
         {
-            rx_parse_length = 0;
+            rx_parse_len = 0;
             rx_packet_len = 0;
             return result;
         }
 
         // Reset parser for next packet
-        rx_parse_length = 0;
+        rx_parse_len = 0;
         rx_packet_len = 0;
 
         return Comm_Result::SUCCESS;

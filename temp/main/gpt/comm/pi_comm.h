@@ -22,8 +22,8 @@ namespace pi_protocol
     constexpr uint16_t PKT_ERROR        = 6;
     constexpr uint16_t PKT_DATA         = 7;
 
-    constexpr uint16_t RXPACKET_MAX_LEN = 100;
-    constexpr uint16_t TXPACKET_MAX_LEN = 100;
+    constexpr uint16_t RXPACKET_MAX_LEN = 255; // LEN field is 1 byte
+    constexpr uint16_t TXPACKET_MAX_LEN = 255;
     constexpr uint16_t RXPACKET_MAX_NUM = 100;
     constexpr uint16_t TXPACKET_MAX_NUM = 100;
     
@@ -79,15 +79,14 @@ private:
     // TaskHandle_t packet_process_task_handle = nullptr;
     // TaskHandle_t tx_task_handle = nullptr;
 
+    RingBuffer<uint8_t> rx_buffer{pi_protocol::RXPACKET_MAX_LEN};
+    RingBuffer<uint8_t> rx_debug_buffer{pi_protocol::RXPACKET_MAX_LEN * 3};
     uint8_t rx_parse_buffer[pi_protocol::RXPACKET_MAX_LEN]{};
-    uint8_t rx_parse_length = 0;
+    uint8_t rx_parse_len = 0;
     uint8_t rx_packet_len = 0;
-    static constexpr uint16_t RX_DEBUG_BUFFER_SIZE = 512;
-    //need to include 
-    RingBuffer<uint8_t> rx_debug_buffer{RX_DEBUG_BUFFER_SIZE};
-
     
     static void rx_callback(int itf, cdcacm_event_t *event);
+
     static void rx_task(void *arg);
     pi_protocol::Comm_Result rx_packet(pi_protocol::rxpacket_t &rxpacket);
     static void tx_task(void *arg);

@@ -63,22 +63,58 @@ void pi_comm::rx_task(void *arg)
 {
     pi_comm *self = static_cast<pi_comm *>(arg);
     pi_protocol::rxpacket_t rxpacket;
+    constexpr int64_t RX_TIMEOUT_US = static_cast<int64_t>(RX_TIMEOUT_MS) * 1000;
+
     while (true)
     {
-        ulTaskNotifyTake(pdTRUE, portMAX_DELAY);
-        // '''timeout확인 필요'''
-        //     if (self->rx_buffer_length > 0 && self->port->isPacketTimeout())
-        //     {
-        //         self->rx_buffer_length = 0;
-        //         self->rx_packet_len = 0;
+        TickType_t wait_ticks = portMAX_DELAY;
 
-        //         self->rx_debug_buffer.dump();
-        //         self->rx_debug_buffer.clear();
+        // A packet is currently being assembled.
+        if (self->rx_parse_start_time_us != 0)
+        {
+            const int64_t elapsed_us = esp_timer_get_time() - self->rx_parse_start_time_us;
 
-        //         self->tx_packet();  // Send RX timeout error
+            if (elapsed_us >= RX_TIMEOUT_US)
+            {
+                self->rx_parse_length = 0;
+                self->rx_packet_len = 0;
+                self->rx_parse_start_time_us = 0;
+                self->rx_debug_buffer.clear();
 
-        //         break;
-        //     }
+                // RX timeout 처리
+                self->tx_packet();
+
+                continue;
+            }
+
+            const int64_t remaining_us = RX_TIMEOUT_US - elapsed_us;
+            uint32_t remaining_ms = static_cast<uint32_t>((remaining_us + 999) / 1000);
+            wait_ticks = pdMS_TO_TICKS(remaining_ms);
+
+            // Avoid immediate return when tick resolution is coarse.
+            if (wait_ticks == 0)
+            {wait_ticks = 1;}
+        }
+
+        const uint32_t notify_count = ulTaskNotifyTake(pdTRUE, wait_ticks);
+
+        // No notification before the packet deadline.
+        if (notify_count == 0)
+        {
+            if (self->rx_parse_start_time_us != 0)
+            {
+                self->rx_parse_length = 0;
+                self->rx_packet_len = 0;
+                self->rx_parse_start_time_us = 0;
+                self->rx_debug_buffer.clear();
+
+                // RX timeout 처리
+                self->tx_packet();
+            }
+
+            continue;
+        }
+
 
         while (self->rx_buffer.available() > 0)
         {
@@ -118,6 +154,7 @@ pi_protocol::Comm_Result pi_comm::rx_packet(pi_protocol::rxpacket_t &rxpacket)
                 {
                     if (byte == 0xFF)
                     {
+                        rx_parse_start_time_us = esp_timer_get_time();
                         rx_parse_buffer[0] = byte;
                         rx_parse_len = 1;
                     }
@@ -229,12 +266,12 @@ pi_protocol::Comm_Result pi_comm::rx_packet(pi_protocol::rxpacket_t &rxpacket)
             return Comm_Result::RX_CORRUPT;
         }
 
-        if (rx_packet_len - 8 > sizeof(rxpacket.data))
-        {
-            rx_parse_len = 0;
-            rx_packet_len = 0;
-            return Comm_Result::BUF_LEN_OVER;
-        }
+        // if (rx_packet_len - 8 > sizeof(rxpacket.data)) // data so long
+        // {
+        //     rx_parse_len = 0;
+        //     rx_packet_len = 0;
+        //     return Comm_Result::BUF_LEN_OVER;
+        // }
 
         rxpacket.data_len = rx_packet_len - 8;
         rxpacket.inst = rx_parse_buffer[PKT_INSTRUCTION];

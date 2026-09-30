@@ -111,10 +111,8 @@ void pi_comm::rx_task(void *arg)
                 // RX timeout 처리
                 self->tx_packet();
             }
-
             continue;
         }
-
 
         while (self->rx_buffer.available() > 0)
         {

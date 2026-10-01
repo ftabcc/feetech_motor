@@ -6,7 +6,6 @@ pi_protocol::Comm_Result pi_comm::rx_packet(pi_protocol::rxpacket_t &rxpacket)
     constexpr uint16_t MIN_PACKET_LEN = 11; // rxpacket_len = DATA(N) + 9 (FF FF FD 00 LEN ID INST DATA CRC_L CRC_H)
     uint8_t byte = 0;
 
-	rx_parse_start_time_us = esp_timer_get_time();
     Comm_Result result = Comm_Result::NEED_MORE_DATA;
     while (rx_buffer.read(byte)) // read one byte
     {
@@ -16,6 +15,7 @@ pi_protocol::Comm_Result pi_comm::rx_packet(pi_protocol::rxpacket_t &rxpacket)
 		{
 			if (byte == 0xFF)
 			{
+				rx_parse_start_time_us = esp_timer_get_time();
 				rx_parse_buffer[rx_parse_len++] = byte;
 				if (!rx_buffer.read(byte))
 					return Comm_Result::NEED_MORE_DATA;
@@ -50,6 +50,7 @@ pi_protocol::Comm_Result pi_comm::rx_packet(pi_protocol::rxpacket_t &rxpacket)
 			}
 			else if(byte == 0xFF) // can be 2nd header
 			{
+				rx_parse_start_time_us = esp_timer_get_time();
 				continue;
 			}
 			else:
@@ -132,21 +133,27 @@ pi_protocol::Comm_Result pi_comm::rx_packet(pi_protocol::rxpacket_t &rxpacket)
 			}
         }
         // DATA + CRC
-        while (rx_parse_len < rx_packet_len && rx_buffer.read(byte) && check time out...)
+        while (rx_parse_len < rx_packet_len && rx_buffer.read(byte))
         {
+			if (check_timeout())
+			{return Comm_Result::RX_TIMEOUT;}
             rx_parse_buffer[rx_parse_len++] = byte; 
             rx_debug_buffer.write(&byte, 1);
         }
+		if (rx_parse_len < rx_packet_len)
+		{
+			return Comm_Result::NEED_MORE_DATA;
+		}
         // CRC check
         uint16_t crc = static_cast<uint16_t>(rx_parse_buffer[rx_packet_len - 2]) | (static_cast<uint16_t>(rx_parse_buffer[rx_packet_len - 1]) << 8);
         uint16_t calculated_crc = updateCRC(0, rx_parse_buffer, rx_packet_len - 2);
 
 		if(crc == calculated_crc)
 		{
-			rxpacket.data_len = rx_packet_len - 8;
+			rxpacket.data_len = rx_packet_len - 9;
 			rxpacket.id = ++prev_packet_id;
 			rxpacket.inst = rx_parse_buffer[pi_protocol::PKT_INSTRUCTION];
-			memcpy(rxpacket.data,&rx_parse_buffer[6],rxpacket.data_len);
+			memcpy(rxpacket.data,&rx_parse_buffer[pi_protocol::PKT_DATA],rxpacket.data_len);
 			result = unstuffing(rxpacket.data, &rxpacket.data_len);
 		}
         else:

@@ -89,7 +89,15 @@ pi_protocol::Comm_Result pi_comm::rx_packet(pi_protocol::rxpacket_t &rxpacket)
             }
 			else:
 			{	
-				rx_parse_len = 0;
+				if (byte == 0xFF)
+				{
+					rx_parse_start_time_us = esp_timer_get_time();
+					rx_parse_len = 1;
+				}
+				else
+				{
+					rx_parse_len = 0;
+				}
 				rx_packet_len = 0;
 				continue;
 			}
@@ -110,7 +118,15 @@ pi_protocol::Comm_Result pi_comm::rx_packet(pi_protocol::rxpacket_t &rxpacket)
 			}
 			else:
 			{	
-				rx_parse_len = 0;
+				if (byte == 0xFF)
+				{
+					rx_parse_start_time_us = esp_timer_get_time();
+					rx_parse_len = 1;
+				}
+				else
+				{
+					rx_parse_len = 0;
+				}
 				rx_packet_len = 0;
 				continue;
 			}
@@ -127,7 +143,15 @@ pi_protocol::Comm_Result pi_comm::rx_packet(pi_protocol::rxpacket_t &rxpacket)
             }
 			else:
 			{
-				rx_parse_len = 0;
+				if (byte == 0xFF)
+				{
+					rx_parse_start_time_us = esp_timer_get_time();
+					rx_parse_len = 1;
+				}
+				else
+				{
+					rx_parse_len = 0;
+				}
 				rx_packet_len = 0;
 				continue;
 			}

@@ -18,9 +18,10 @@ namespace pi_protocol
     // Packet position
     constexpr uint16_t PKT_RESERVED     = 3;
     constexpr uint16_t PKT_LENGTH       = 4;
-    constexpr uint16_t PKT_INSTRUCTION  = 5;
-    constexpr uint16_t PKT_ERROR        = 6;
-    constexpr uint16_t PKT_DATA         = 7;
+    constexpr uint16_t PKT_ID       = 5;
+    constexpr uint16_t PKT_INSTRUCTION  = 6;
+    constexpr uint16_t PKT_ERROR        = 7;
+    constexpr uint16_t PKT_DATA         = 8;
 
     constexpr uint16_t RXPACKET_MAX_LEN = 255; // LEN field is 1 byte
     constexpr uint16_t TXPACKET_MAX_LEN = 255;

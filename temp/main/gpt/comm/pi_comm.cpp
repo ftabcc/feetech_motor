@@ -220,9 +220,12 @@ pi_protocol::Comm_Result pi_comm::rx_packet(pi_protocol::rxpacket_t &rxpacket)
                 rx_packet_len = 0;
                 continue;
             }
-            rx_parse_buffer[4] = byte;
-            rx_parse_len = 5;
-            continue;
+            rx_parse_buffer[rx_parse_len++] = byte;
+            if (!rx_buffer.read(byte))
+            {
+                result = 
+            }
+            rx_debug_buffer.write(&byte, 1);
         }
 
         // Read ID

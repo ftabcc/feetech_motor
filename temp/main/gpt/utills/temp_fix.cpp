@@ -1,3 +1,225 @@
+//26.10.01 
+
+pi_protocol::Comm_Result pi_comm::rx_packet(pi_protocol::rxpacket_t &rxpacket)
+{
+    constexpr uint16_t HEADER_LEN = 4;
+    constexpr uint16_t MIN_PACKET_LEN = 11; // rxpacket_len = DATA(N) + 9 (FF FF FD 00 LEN ID INST DATA CRC_L CRC_H)
+    uint8_t byte = 0;
+
+
+            if (!rx_buffer.read(byte))
+            {
+                result = Comm_Result::NEED_MORE_DATA;
+            }
+            rx_debug_buffer.write(&byte, 1);
+
+            
+
+	rx_parse_start_time_us = esp_timer_get_time();
+    Comm_Result result = Comm_Result::NEED_MORE_DATA;
+    while (rx_buffer.read(byte)) // read one byte
+    {
+        rx_debug_buffer.write(&byte, 1);
+
+		if (rx_parse_len == 0)
+		{
+			if (byte == 0xFF)
+			{
+				rx_parse_buffer[rx_parse_len++] = byte;
+				if (!rx_buffer.read(byte))
+					return Comm_Result::NEED_MORE_DATA;
+				rx_debug_buffer.write(&byte, 1);
+			}
+			else:
+				continue;
+		}
+		if (rx_parse_len == 1)
+		{
+			if (byte == 0xFF)
+			{
+				rx_parse_buffer[rx_parse_len++] = byte;
+			}
+			else:
+				rx_parse_len = 0;
+				continue;
+		}
+		if (rx_parse_len == 2)
+		{
+			if (byte == 0xFD)
+				rx_parse_buffer[rx_parse_len++] = byte;
+			else if(byte == 0xFF)
+			{
+				while(true)
+				{
+					if (!rx_buffer.read(byte))
+						return Comm_Result::NEED_MORE_DATA;
+					if(byte == 0xFF)
+						continue;
+					else if(byte == 0xFD)
+						rx_parse_buffer[rx_parse_len++] = byte;
+						break;
+					else:
+						break;
+				}
+			}
+			else:
+				rx_parse_len = 0;
+				continue;
+		}
+
+
+
+        if (rx_parse_len < HEADER_LEN)
+        {
+            switch (rx_parse_len)
+            {
+                case 0:
+                {
+                    if (byte == 0xFF)
+                    {
+                        rx_parse_start_time_us = esp_timer_get_time();
+                        rx_parse_buffer[rx_parse_len++] = byte;
+                    }
+                    break;
+                }
+                case 1:
+                {
+                    if (byte == 0xFF)
+                    {
+                        rx_parse_buffer[rx_parse_len++] = byte;
+                    }
+                    else
+                    {
+                        rx_parse_len = 0;
+                    }
+                    break;
+                }
+                case 2:
+                {
+                    if (byte == 0xFD)
+                    {
+                        rx_parse_buffer[rx_parse_len++] = byte;
+                    }
+                    else if (byte == 0xFF) // can be 2nd of a new header
+                    {
+                        break;
+                    }
+                    else
+                    {
+                        rx_parse_len = 0;
+                    }
+                    break;
+                }
+                case 3:
+                {
+                    if (byte == 0x00)
+                    {
+                        rx_parse_buffer[3] = byte;
+                        rx_parse_len = 4;
+                    }
+                    else if (byte == 0xFF) // can be 1st of a new header
+                    {
+                        rx_parse_buffer[0] = 0xFF; 
+                        rx_parse_len = 1;
+                    }
+                    else
+                    {
+                        rx_parse_len = 0;
+                    }
+                    break;
+                }
+            }
+            continue;
+        }
+
+        // Read LEN
+        if (rx_parse_len == 4)
+        {
+            rx_packet_len = byte + 9; // rxpacket_len = DATA(N) + 9 (FF FF FD 00 LEN ID INST DATA CRC_L CRC_H)
+            if (rx_packet_len < MIN_PACKET_LEN || rx_packet_len > pi_protocol::RXPACKET_MAX_LEN) // invalid packet length
+            {
+                rx_parse_len = 0;
+                rx_packet_len = 0;
+                continue;
+            }
+            rx_parse_buffer[rx_parse_len++] = byte;
+            if (!rx_buffer.read(byte))
+            {
+                result = Comm_Result::NEED_MORE_DATA;
+            }
+            rx_debug_buffer.write(&byte, 1);
+        }
+
+        // Read ID
+        if (rx_parse_len == 5)
+        {
+            if (byte != 0x...) // invalid id
+            {
+                rx_parse_len = 0;
+                rx_packet_len = 0;
+                continue;
+            }
+            rx_parse_buffer[rx_parse_len++] = byte;
+            rx_buffer.read(byte);
+            rx_debug_buffer.write(&byte, 1);
+        }
+
+        // Read INSTRUCTION
+        if (rx_parse_len == 6)
+        {
+            if (byte != 0x01 && byte != 0x55... ) // invalid inst
+            {
+                rx_parse_len = 0;
+                rx_packet_len = 0;
+                continue;
+            }
+            rx_parse_buffer[rx_parse_len++] = byte;
+            rx_buffer.read(byte);
+            rx_debug_buffer.write(&byte, 1);
+        }
+
+
+        // Read DATA + CRC
+        while (rx_parse_len < rx_packet_len && rx_buffer.read(byte))
+        {
+            rx_debug_buffer.write(&byte, 1);
+            rx_parse_buffer[rx_parse_len++] = byte; 
+        }
+        if (rx_parse_len < rx_packet_len)// Packet not complete yet
+        {break;}
+        
+        // CRC check
+        uint16_t crc = static_cast<uint16_t>(rx_parse_buffer[rx_packet_len - 2]) | (static_cast<uint16_t>(rx_parse_buffer[rx_packet_len - 1]) << 8);
+        uint16_t calculated_crc = updateCRC(0, rx_parse_buffer, rx_packet_len - 2);
+
+        if (calculated_crc != crc)
+        {
+            result = Comm_Result::RX_CORRUPT;
+            break;
+        }
+
+        // if (rx_packet_len - 8 > sizeof(rxpacket.data)) // data so long
+        // {
+        //     rx_parse_len = 0;
+        //     rx_packet_len = 0;
+        //     return Comm_Result::BUF_LEN_OVER;
+        // }
+
+        rxpacket.data_len = rx_packet_len - 8;
+        rxpacket.inst = rx_parse_buffer[PKT_INSTRUCTION];
+        memcpy(rxpacket.data,&rx_parse_buffer[6],rxpacket.data_len);
+        result = unstuffing(rxpacket.data, &rxpacket.data_len);
+        break;
+    }
+
+    rx_parse_len = 0;
+    rx_packet_len = 0;
+    return result;
+}
+
+
+
+
 // esp-pi
 static int protocol::rxPacket(int itf)
 {

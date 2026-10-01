@@ -31,7 +31,7 @@ namespace pi_protocol
     typedef struct
     {
         uint8_t data_len;
-        uint16_t request_id;
+        uint16_t id;
         uint8_t inst;
         uint8_t data[pi_protocol::RXPACKET_MAX_LEN - 8];
     } rxpacket_t;
@@ -40,7 +40,7 @@ namespace pi_protocol
     typedef struct
     {
         uint8_t data_len;
-        uint16_t request_id;
+        uint16_t id;
         uint8_t inst;
         uint8_t err;
         uint8_t data[pi_protocol::TXPACKET_MAX_LEN - 9];

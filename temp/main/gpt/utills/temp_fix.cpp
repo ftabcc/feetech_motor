@@ -1,4 +1,5 @@
 //26.10.01 
+0x.. esp->pi cdc기반으로 하게 변경하기.
 
 pi_protocol::Comm_Result pi_comm::rx_packet(pi_protocol::rxpacket_t &rxpacket)
 {
@@ -198,7 +199,6 @@ pi_protocol::Comm_Result pi_comm::rx_packet(pi_protocol::rxpacket_t &rxpacket)
 static int protocol::rxPacket(int itf)
 {
     (void)event;
-
     const uint16_t min_length       = 11;   // temp버퍼의 프로토콜 구조상 될 수 있는 최소 길이
     const uint16_t max_length = 255;    // temp버퍼의 최대 길이
     uint16_t real_len = 0;              // packet의 실제 길이

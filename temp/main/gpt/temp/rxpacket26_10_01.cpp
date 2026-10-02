@@ -1,7 +1,21 @@
 //substract
 while (true)
 {
-    xTaskNotifyWait(0, 0xFFFFFFFF, &notify_value, portMAX_DELAY);
+    TickType_t wait_ticks;
+
+    if (has_partial_packet())
+        wait_ticks = get_remaining_timeout();
+    else
+        wait_ticks = portMAX_DELAY;
+
+    BaseType_t notified = xTaskNotifyWait(0,0xFFFFFFFF,&notify_value,wait_ticks);
+
+    if (notified == pdFALSE && has_partial_packet())
+    {
+        rx_timeout_process();
+        continue;
+    }
+
     while (true)
     {
         result = process();

@@ -72,14 +72,17 @@ pi_protocol::Comm_Result pi_comm::rx_packet(pi_protocol::rxpacket_t &rxpacket)
 {
     
 
-    while (true)
+    while (true) // 하나 패킷완성후 rx_task에서 while(true)로 돌아왔을때, notify안와서 문제가능???
     {
-
         uint32_t cdc_available = tud_cdc_n_available(itf);
         if (cdc_available == 0)
         {
             if(rx_buffer.available())
                 break; // 밑에서 더 소비해라.
+            '''
+            아래코드에서 find를 쓰고 peek을 써서 사용할때 read로 read_idx가 바귀는게 아니라
+            복사해오는거니까 만약 crc에서 실패해서 read를 안했다면
+             rx_buffer는 계속 가득 찬 상태가 유지될수도 있겠네?'''
             else:
                 return Comm_Result::NO_DATA;    
         }
@@ -101,7 +104,6 @@ pi_protocol::Comm_Result pi_comm::rx_packet(pi_protocol::rxpacket_t &rxpacket)
             break; // 링버퍼에 쓸 수 있는건 다 썼으니 아래에서 소비해줘야함.
         //     return Comm_Result::BUF_LEN_OVER;
     }
-
 
     while(rx_buffer.available() > 0)
     {   

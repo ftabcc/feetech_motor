@@ -176,6 +176,34 @@ std::size_t RingBuffer<T>::peek(T* data, std::size_t len, std::size_t offset) co
 }
 
 template <typename T>
+bool RingBuffer<T>::get_write_ptr(T*& ptr, std::size_t requested_len, std::size_t& write_len)
+{
+    ptr = nullptr;
+    write_len = 0;
+
+    if (buffer == nullptr || count >= capacity || requested_len == 0)
+        return false;
+
+    const std::size_t free = capacity - count;
+
+    std::size_t contiguous_len;
+
+    if (write_idx < read_idx)
+        contiguous_len = read_idx - write_idx;
+    else
+        contiguous_len = capacity - write_idx;
+
+    write_len = (requested_len < contiguous_len) ? requested_len : contiguous_len;
+
+    if (write_len == 0)
+        return false;
+
+    ptr = &buffer[write_idx];
+
+    return true;
+}
+
+template <typename T>
 std::size_t RingBuffer<T>::available() const
 {
     return count;

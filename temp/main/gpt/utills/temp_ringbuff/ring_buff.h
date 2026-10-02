@@ -25,6 +25,8 @@ public:
 
     bool peek(std::size_t offset, T& data) const;
     std::size_t peek(T* data, std::size_t len, std::size_t offset = 0) const;
+
+    bool get_write_ptr(T*& ptr, std::size_t requested_len, std::size_t& write_len); 
     
 
     // Buffer status

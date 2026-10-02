@@ -70,7 +70,7 @@ void pi_comm::rx_task(void *arg)
 pi_protocol::Comm_Result pi_comm::rx_packet(pi_protocol::rxpacket_t &rxpacket)
 {
 
-
+0x..... 10-03일 읽기
         rx_buffer.read(packet, packet_length);// 패킷완성후 읽기
 }
 

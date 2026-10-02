@@ -45,7 +45,7 @@ void pi_comm::rx_task(void *arg)
             continue;
         }
 
-        while (self->rx_buffer.available() > 0)
+        while (true)
         {
             Comm_Result result = self->rx_packet(rxpacket;);
             switch (result)
@@ -67,11 +67,48 @@ void pi_comm::rx_task(void *arg)
 
 
 //26-10-02
+0x..... 10-03일 작성필요
 pi_protocol::Comm_Result pi_comm::rx_packet(pi_protocol::rxpacket_t &rxpacket)
 {
+    
+    esp_err_t ret = tinyusb_cdcacm_read(itf,&temp[rx_length],?,&rx_size); // 어느CDC,어디저장,최대저장바이트수,실제읽은 바이트 어디저장
+    if (ret != ESP_OK)
+    {
+        result = pi_protocol::Comm_Result::CDC_ERR;
+        break;
+    }
 
-0x..... 10-03일 읽기
+    if (!header_confirmed)
+    {
+
+    }
+
+
+    while (true)
+    {
+        uint8_t* write_ptr = nullptr;
+        uint32_t cdc_available = tud_cdc_n_available(itf);
+        if (!rx_buffer.get_write_ptr(write_ptr, write_len))
+            break;
+        std::size_t rx_size = 0;
+        esp_err_t ret = tinyusb_cdcacm_read(itf, write_ptr, write_len, &rx_size);
+        if (ret != ESP_OK)
+        {
+            result = pi_protocol::Comm_Result::CDC_ERR;
+            break;
+        }
+        if (rx_size == 0) // cdc에서 읽을 수 있는 거 다 읽었다.
+            break;
+        rx_buffer.commit_write(rx_size);
+    }
+
+    while(rx_buffer.available() > 0)
+    {
+        
         rx_buffer.read(packet, packet_length);// 패킷완성후 읽기
+    }
+    return result;
+        
 }
 
 // esp-pi

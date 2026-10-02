@@ -104,6 +104,78 @@ std::size_t RingBuffer<T>::read(T* data, std::size_t len)
 }
 
 template <typename T>
+std::size_t RingBuffer<T>::find(const T& value, std::size_t start) const
+{
+    if (start >= count)
+        return count;
+
+    for (std::size_t i = start; i < count; ++i)
+    {
+        const std::size_t index = (read_idx + i) % capacity;
+
+        if (buffer[index] == value)
+            return i;
+    }
+
+    return count;
+}
+
+template <typename T>
+std::size_t RingBuffer<T>::find(const T* pattern, std::size_t pattern_len, std::size_t start) const
+{
+    if (pattern_len == 0 || start >= count || pattern_len > count - start)
+        return count;
+
+    for (std::size_t i = start; i + pattern_len <= count; ++i)
+    {
+        bool matched = true;
+
+        for (std::size_t j = 0; j < pattern_len; ++j)
+        {
+            const std::size_t index = (read_idx + i + j) % capacity;
+
+            if (buffer[index] != pattern[j])
+            {
+                matched = false;
+                break;
+            }
+        }
+
+        if (matched)
+            return i;
+    }
+
+    return count;
+}
+
+template <typename T>
+bool RingBuffer<T>::peek(std::size_t offset, T& data) const
+{
+    if (offset >= count)
+        return false;
+
+    const std::size_t index = (read_idx + offset) % capacity;
+    data = buffer[index];
+
+    return true;
+}
+
+template <typename T>
+std::size_t RingBuffer<T>::peek(T* data, std::size_t len, std::size_t offset) const
+{
+    if (data == nullptr || len == 0 || offset >= count || len > count - offset)
+        return 0;
+
+    for (std::size_t i = 0; i < len; ++i)
+    {
+        const std::size_t index = (read_idx + offset + i) % capacity;
+        data[i] = buffer[index];
+    }
+
+    return len;
+}
+
+template <typename T>
 std::size_t RingBuffer<T>::available() const
 {
     return count;

@@ -1,44 +1,4 @@
 //substract
-while (true)
-{
-    TickType_t wait_ticks;
-
-    if (has_partial_packet())
-        wait_ticks = get_remaining_timeout();
-    else
-        wait_ticks = portMAX_DELAY;
-
-    BaseType_t notified = xTaskNotifyWait(0,0xFFFFFFFF,&notify_value,wait_ticks);
-
-    if (notified == pdFALSE && has_partial_packet())
-    {
-        rx_timeout_process();
-        continue;
-    }
-
-    while (true)
-    {
-        result = process();
-        switch (result)
-        {
-            case NEED_MORE_DATA:
-                break;
-            case ERR:
-                tx_err();
-                break;
-            case SUCCESS:
-                notify_to_inst();
-                continue;
-        }
-        break;
-    }
-}
-
-
-
-
-
-
 
 
 
@@ -50,11 +10,9 @@ void pi_comm::rx_task(void *arg)
 
     while (true)
     {
-        TickType_t wait_ticks = portMAX_DELAY;
+        TickType_t wait_ticks;
 
-        // A packet is currently being assembled.
         if (self->rx_parse_start_time_us != 0)
-        {
             const int64_t elapsed_us = esp_timer_get_time() - self->rx_parse_start_time_us;
             if (elapsed_us >= RX_TIMEOUT_US)
             {
@@ -69,51 +27,160 @@ void pi_comm::rx_task(void *arg)
                 continue;
             }
 
-            const int64_t remaining_us = RX_TIMEOUT_US - elapsed_us;
-            uint32_t remaining_ms = static_cast<uint32_t>((remaining_us + 999) / 1000);
-            wait_ticks = pdMS_TO_TICKS(remaining_ms);
-
+            wait_ticks = RX_TIMEOUT_US - elapsed_us;
             if (wait_ticks == 0) // Avoid immediate return when tick resolution is coarse.
-            {wait_ticks = 1;}
-        }
+                wait_ticks = 1;
+        else
+            wait_ticks = portMAX_DELAY;
 
-        const uint32_t notify_count = ulTaskNotifyTake(pdTRUE, wait_ticks);
+        BaseType_t notified = xTaskNotifyWait(0,0xFFFFFFFF,&notify_value,wait_ticks);
 
-        // No notification before the packet deadline.
-        if (notify_count == 0)
+        if (notified == pdFALSE && self->rx_parse_start_time_us != 0) // RX_timeout
         {
-            if (self->rx_parse_start_time_us != 0)
-            {
-                self->rx_parse_length = 0;
-                self->rx_packet_len = 0;
-                self->rx_parse_start_time_us = 0;
-                self->rx_debug_buffer.clear();
-
-                // RX timeout 처리
-                self->tx_packet();
-            }
+            self->rx_parse_length = 0;
+            self->rx_packet_len = 0;
+            self->rx_parse_start_time_us = 0;
+            self->tx_packet();
+            self->rx_debug_buffer.clear();
             continue;
         }
 
         while (self->rx_buffer.available() > 0)
         {
             Comm_Result result = self->rx_packet(rxpacket;);
-            if (result == Comm_Result::NEED_MORE_DATA)
-            {break;}
-            if (result == Comm_Result::SUCCESS)
+            switch (result)
             {
-                self->rx_debug_buffer.clear()
-                if (xQueueSend(self->rx_queue,&self->rxpacket,0) != pdTRUE) // (,,꽉 차면 대기할 시간)
-                {
-                    // RX packet queue full
-                }
+                case Comm_Result::SUCCESS:
+                    if (xQueueSend(self->rx_queue,&self->rxpacket,0) != pdTRUE)
+                        // BUF_NUM_OVER
+                    continue;
+                case Comm_Result::NEED_MORE_DATA:
+                    break;
+                case Comm_Result::FAIL:
+                    tx_err();
+                    break;
             }
-            else // Comm_Result
-            {
-                self->tx_packet();
-            }
+            break;
         }
     }
+}
+
+
+//26-10-02
+pi_protocol::Comm_Result pi_comm::rx_packet(pi_protocol::rxpacket_t &rxpacket)
+{
+
+
+        rx_buffer.read(packet, packet_length);// 패킷완성후 읽기
+}
+
+// esp-pi
+pi_protocol::Comm_Result pi_comm::rx_packet(pi_protocol::rxpacket_t &rxpacket)
+{
+    (void)event;
+    const uint16_t min_length       = 11;   // temp버퍼의 프로토콜 구조상 될 수 있는 최소 길이
+    const uint16_t max_length = 255;    // temp버퍼의 최대 길이
+    uint16_t real_len = 0;              // packet의 실제 길이
+    uint8_t temp[max_length]  = {};  // rx패킷을 찾기전에 잠시 저장하는 공간.
+
+    size_t rx_size            = 0;     // cdc로 이번에 실제로 읽은 바이트 수
+    uint16_t rx_length        = 0;    // 현재 temp버퍼 바이트 수
+    uint16_t wait_length      = min_length;   // 지금 기다리는 전체 패킷 길이 (최소 상태패킷 길이로 시작)
+
+    uint16_t idx              = 0;    // 이번에 확인하기 시작하는 바이트 idx. idx이전은 헤더시작불가능 영역. 
+    bool     found            = false;// 헤더패턴 찾음 여부
+    bool     header_confirmed = false;// 헤더패턴 + 내용검증(Reserved+Length+Instruction) 검증 여부
+    const uint16_t HEADER_LEN = 3;   //  FF FF FD + byte stuffing 여부 바이트(FD면 byte-stuffing)
+    int      result           = COMM_FAIL; // 종류: COMM_SUCCESS, COMM_FAIL(default), [COMM_RX_CORRUPT, COMM_BUF_OVER, COMM_RX_TIMEOUT, COMM_CDC_ERR]
+
+    if (wait_length > max_length)
+    {
+        result = pi_protocol::Comm_Result::BUF_LEN_OVER;
+        break;
+    }
+    esp_err_t ret = tinyusb_cdcacm_read(itf,&temp[rx_length],wait_length - rx_length,&rx_size); // 어느CDC,어디저장,최대저장바이트수,실제읽은 바이트 어디저장
+    if (ret != ESP_OK)
+    {
+        result = pi_protocol::Comm_Result::CDC_ERR;
+        break;
+    }
+
+    rx_length += rx_size;
+    if (rx_length >= wait_length)
+    {
+        if (!header_confirmed)
+        {
+            uint16_t limit = rx_length - HEADER_LEN;
+            if (!found)
+            {
+            while (idx < limit) // limit이전까지만 헤더 확인 가능
+            {
+                uint8_t *p = (uint8_t *)memchr(&temp[idx], 0xFF, (size_t)(limit - idx)); // memchr(시작주소, 찾을값, 검색할바이트수);
+                if (p == nullptr)
+                {
+                    idx = limit;   // 남은 구간에 0xFF 없으므로 더 볼 필요 없음
+                    break;
+                }
+                idx = (uint16_t)(p - temp);
+                if ((temp[idx + 1] == 0xFF) &&(temp[idx + 2] == 0xFD) &&(temp[idx + 3] != 0xFD))
+                {
+                    found = true;
+                    break;
+                }
+                idx += 1;
+            }
+            if (!found)
+            {
+                wait_length = idx + min_length;
+                continue;
+            }
+            }
+            
+            if (found) // 헤더패턴 확인
+            {
+            if (temp[idx + PKT_RESERVED] != 0x00 || temp[idx + PKT_LENGTH] > RXPACKET_MAX_LEN || temp[idx + PKT_INSTRUCTION] != 0x55) // 내용 검증
+            {
+                wait_length += HEADER_LEN;
+                idx += HEADER_LEN;
+                found = false;
+                continue;
+            }
+            // 헤더패턴 + 내용 검증 후 = 진짜 헤더
+            uint16_t real_len = temp[idx + PKT_LENGTH] + PKT_LENGTH + 1;
+            if (idx + real_len > rx_length)// 실제 패킷 남은거 더 받아오게 
+            {
+                wait_length = idx + real_len;
+                header_confirmed = true;
+                continue;
+            }
+            header_confirmed = true;
+            }
+        }
+
+        if (header_confirmed)
+        {
+            uint16_t crc = temp[rx_length-1];
+            result = (updateCRC(&temp[idx], rx_length - idx) == crc) ? COMM_SUCCESS : COMM_RX_CORRUPT; // updateCRC(시작주소,검증길이)
+            memmove(&rxpacket[0], &temp[idx], real_len); // memmove(목적지 시작주소, 원본시작주소, 이동할바이트수);
+            break;
+        }
+    }
+    else    // rx_length < wait_length: 아직 필요한 만큼 못 받음.timeout 확인.
+    {
+        const int64_t elapsed_us = esp_timer_get_time() - self->rx_parse_start_time_us;
+        if (elapsed_us >= RX_TIMEOUT_US)
+        {
+            if (rx_length == 0)
+                result = pi_protocol::Comm_Result::RX_TIMEOUT;
+            else
+                result = pi_protocol::Comm_Result::RX_CORRUPT;
+            break;
+        }
+        else:
+            result = pi_protocol::Comm_Result::NEED_MORE_DATA;
+    }
+
+    return result;
 }
 
 pi_protocol::Comm_Result pi_comm::rx_packet(pi_protocol::rxpacket_t &rxpacket)

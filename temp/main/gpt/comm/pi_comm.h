@@ -58,13 +58,15 @@ namespace pi_protocol
     enum class Comm_Result : uint8_t
     {
         SUCCESS        = 0,
-        FAIL           = 1,
-        NEED_MORE_DATA = 2,
-        BUF_LEN_OVER   = 3,
-        BUF_NUM_OVER   = 4,
-        RX_CORRUPT     = 5,
-        RX_TIMEOUT     = 6,
-        CDC_ERR        = 7
+        NEED_MORE_DATA = 1,
+        NO_DATA        = 2,
+        INVALID_LENGTH = 3,
+        CRC_ERR        = 4,
+        BUF_LEN_OVER   = 5,
+        BUF_NUM_OVER   = 6,
+        RX_CORRUPT     = 7,
+        RX_TIMEOUT     = 8,
+        CDC_ERR        = 9
     };
 }
 

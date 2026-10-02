@@ -1,4 +1,31 @@
-cdc기반으로 기존처럼하게 만들기.
+//substract
+while (true)
+{
+    xTaskNotifyWait(0, 0xFFFFFFFF, &notify_value, portMAX_DELAY);
+    while (true)
+    {
+        result = process();
+        switch (result)
+        {
+            case NEED_MORE_DATA:
+                break;
+            case ERR:
+                tx_err();
+                break;
+            case SUCCESS:
+                notify_to_inst();
+                continue;
+        }
+        break;
+    }
+}
+
+
+
+
+
+
+
 
 
 void pi_comm::rx_task(void *arg)

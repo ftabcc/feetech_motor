@@ -78,7 +78,7 @@ pi_protocol::Comm_Result pi_comm::rx_packet(pi_protocol::rxpacket_t &rxpacket)
         if (cdc_available == 0)
         {
             if(rx_buffer.available())
-                break; // 밑에서 더 소비해라.
+                break; // 밑에서 더 소비해라..->사실 완성전까지 소비안함.
             '''
             아래코드에서 find를 쓰고 peek을 써서 사용할때 read로 read_idx가 바귀는게 아니라
             복사해오는거니까 만약 crc에서 실패해서 read를 안했다면
@@ -101,7 +101,7 @@ pi_protocol::Comm_Result pi_comm::rx_packet(pi_protocol::rxpacket_t &rxpacket)
             rx_buffer.commit_write(rx_size);
         }
         else:
-            break; // 링버퍼에 쓸 수 있는건 다 썼으니 아래에서 소비해줘야함.
+            break; // 링버퍼에 쓸 수 있는건 다 썼으니 아래에서 소비해줘야함.->사실 완성전까지 소비안함.
         //     return Comm_Result::BUF_LEN_OVER;
     }
 

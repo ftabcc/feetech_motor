@@ -75,18 +75,19 @@ pi_protocol::Comm_Result pi_comm::rx_packet(pi_protocol::rxpacket_t &rxpacket)
     while (true)
     {
 
-        uint32_t cdc_avail = tud_cdc_n_available(itf);
+        uint32_t cdc_available = tud_cdc_n_available(itf);
         if (cdc_available == 0)
-            return Comm_Result::NO_DATA;
-
-        // const std::size_t free_space = rx_buffer.free_space();
-        // if (cdc_available > free_space)
-        //     return Comm_Result::BUF_LEN_OVER;
+        {
+            if(rx_buffer.available())
+                break; // 밑에서 더 소비해라.
+            else:
+                return Comm_Result::NO_DATA;    
+        }
 
         uint8_t* write_ptr = nullptr;
         std::size_t write_len = 0;
 
-        if (rx_buffer.get_write_ptr(write_ptr, cdc_avail, write_len))
+        if (rx_buffer.get_write_ptr(write_ptr, cdc_available, write_len))
         {
             std::size_t rx_size = 0;
             const esp_err_t ret = tinyusb_cdcacm_read(itf, write_ptr, write_len, &rx_size);

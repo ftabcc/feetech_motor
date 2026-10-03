@@ -70,50 +70,68 @@ void pi_comm::rx_task(void *arg)
 0x..... 10-03일 작성필요
 pi_protocol::Comm_Result pi_comm::rx_packet(pi_protocol::rxpacket_t &rxpacket)
 {
-    
-
-    while (true) // 하나 패킷완성후 rx_task에서 while(true)로 돌아왔을때, notify안와서 문제가능???
+    while(true)
     {
-        uint32_t cdc_available = tud_cdc_n_available(itf);
-        if (cdc_available == 0)
+        while (true) // rx_buffer에 저장가능한 만큼 cdc rx transfer읽어서 저장.
         {
-            if(rx_buffer.available())
-                break; // 밑에서 더 소비해라..->사실 완성전까지 소비안함.
-            '''
-            아래코드에서 find를 쓰고 peek을 써서 사용할때 read로 read_idx가 바귀는게 아니라
-            복사해오는거니까 만약 crc에서 실패해서 read를 안했다면
-             rx_buffer는 계속 가득 찬 상태가 유지될수도 있겠네?'''
+            uint32_t cdc_available = tud_cdc_n_available(itf);
+            if (cdc_available == 0)
+            {
+                if(rx_buffer.available()) //링버퍼는 읽을거 있는데, write할거 없다.
+                    break; 
+                else:
+                    return Comm_Result::NO_DATA; //가능한 경우인가?
+            }
+
+            uint8_t* write_ptr = nullptr;
+            std::size_t write_len = 0;
+
+            if (rx_buffer.get_write_ptr(write_ptr, cdc_available, write_len))
+            {
+                std::size_t rx_size = 0;
+                const esp_err_t ret = tinyusb_cdcacm_read(itf, write_ptr, write_len, &rx_size);
+                if (ret != ESP_OK)
+                    return Comm_Result::CDC_ERR;
+                if (rx_size == 0)
+                    return Comm_Result::NO_DATA;
+                rx_buffer.commit_write(rx_size);
+            }
             else:
-                return Comm_Result::NO_DATA;    
+                break; // 링버퍼에 쓸 수 있는건 다 썼으니 아래에서 소비해줘야함.->사실 완성전까지 소비안함.
+            //     return Comm_Result::BUF_LEN_OVER;
         }
 
-        uint8_t* write_ptr = nullptr;
-        std::size_t write_len = 0;
+        while(rx_buffer.available() > 0)
+        {   
+            std::size_t header_idx = rx_buffer.find(pattern, pattern_len, 0);
+            if (header_idx == rx_buffer.available()) // NOT FOUND
+            {   
+                if (rx_buffer.full())
+                    //header-1만큼 바이트 남겨두고 다 읽어서 저장공간늘려줌.
+                    //읽은 바이트는 debug용으로 보냄.
+                break;
+            }
+            else:
+            {
+                //header_idx부터 min length만큼 버퍼가 
+                if(헤더 다음인 id필드 읽을수있음?)
+                    packet_len = ?;
+                else:
+                    if (rx_buffer.full())
+                    {
+                        min_length만큼 read해서 저장공간 늘려줌
+                        result = Comm_Result::NEED_MORE_DATA;
+                    }
+                    else:
 
-        if (rx_buffer.get_write_ptr(write_ptr, cdc_available, write_len))
-        {
-            std::size_t rx_size = 0;
-            const esp_err_t ret = tinyusb_cdcacm_read(itf, write_ptr, write_len, &rx_size);
-            if (ret != ESP_OK)
-                return Comm_Result::CDC_ERR;
-            if (rx_size == 0)
-                return Comm_Result::NO_DATA;
-            rx_buffer.commit_write(rx_size);
+
+                    
+            }
+
+            rx_buffer.read(packet, packet_length);// 패킷완성후 읽기
         }
-        else:
-            break; // 링버퍼에 쓸 수 있는건 다 썼으니 아래에서 소비해줘야함.->사실 완성전까지 소비안함.
-        //     return Comm_Result::BUF_LEN_OVER;
+        return result;
     }
-
-    while(rx_buffer.available() > 0)
-    {   
-        if (!header_confirmed)
-        {
-
-        }
-        rx_buffer.read(packet, packet_length);// 패킷완성후 읽기
-    }
-    return result;
 }
 
 // esp-pi

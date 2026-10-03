@@ -126,25 +126,21 @@ std::size_t RingBuffer<T>::find(const T* pattern, std::size_t pattern_len, std::
     if (pattern_len == 0 || start >= count || pattern_len > count - start)
         return count;
 
-    for (std::size_t i = start; i + pattern_len <= count; ++i)
+    for (std::size_t i = start; i + pattern_len <= count; ++i) //sliding
     {
         bool matched = true;
-
-        for (std::size_t j = 0; j < pattern_len; ++j)
+        for (std::size_t j = 0; j < pattern_len; ++j) //find_head
         {
             const std::size_t index = (read_idx + i + j) % capacity;
-
             if (buffer[index] != pattern[j])
             {
                 matched = false;
                 break;
             }
         }
-
         if (matched)
             return i;
     }
-
     return count;
 }
 

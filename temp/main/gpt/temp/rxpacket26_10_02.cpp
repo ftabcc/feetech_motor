@@ -65,9 +65,95 @@ void pi_comm::rx_task(void *arg)
     }
 }
 
+//26-10-03 링버퍼대신 일반버퍼 사용. 사용후 memmove필요. 그러나 memmove 소요 길지 않음.
+//->일단 rx_buffer를 선형으로 1kb정도 잡는다. 
+pi_protocol::Comm_Result pi_comm::rx_packet(pi_protocol::rxpacket_t &rxpacket)
+{
+    idx = 0;
+    while(true)
+    {   
+        write_available = rx_buffer_size - read_available;
+        if(write_available)
+            std::size_t rx_size = 0;
+            const esp_err_t ret = tinyusb_cdcacm_read(itf, &rx_buffer, write_available, &rx_size);
+            if (ret != ESP_OK)
+                result = Comm_Result::CDC_ERR;
+                break;
+            if (rx_size == 0)
+                result =  Comm_Result::NO_DATA;
+                break;
+            read_available += rx_size;
+        else:// 최후의 보루. 절대 가득 차지 않게 관리.
+            pass;
+        
+        if(!found)
+        {
+            limit_idx = read_available - header_len;
+            while (idx < limit_idx) // limit이전까지만 헤더 확인 가능'
+            {
+                uint8_t *p = (uint8_t *)memchr(&rx_buffer[idx], 0xFF, (size_t)(limit_idx - idx)); // memchr(시작주소, 찾을값, 검색할바이트수);
+                if (p == nullptr)
+                {
+                    idx = limit_idx;   // 남은 구간에 0xFF 없으므로 더 볼 필요 없음
+                    result = Comm_Result::NEED_MORE_DATA;
+                    break;
+                }
+                idx = (uint16_t)(p - rx_buffer);
+                if ((rx_buffer[idx + 1] == 0xFF) &&(rx_buffer[idx + 2] == 0xFD) &&(rx_buffer[idx + 3] == 0))
+                {
+                    found = true;
+                    break;
+                }
+                idx += 1;
+            }
+        }
+        if(found)
+        {
+            if(idx + header_len + 3 <= read_available) // len,id,inst 필드 읽기 가능
+                if(rx_buffer[idx + pi_protocol::PKT_LENGTH] > pi_protocol::RXPACKET_MAX_LEN || // 잘못된 LEN
+                    rx_buffer[idx + pi_protocol::PKT_ID] <= prev_id || // 잘못된 id
+                    rx_buffer[idx + pi_protocol::PKT_INSTRUCTION] = ?? // 잘못된 inst
+                ){
+                    idx += HEADER_LEN; // 헤더일 수 없는 바이트 건너뛰기
+                    found = false;
+                    continue;
+                }
+                else:{
+                    if(idx + rx_buffer[idx + pi_protocol::PKT_LENGTH] <= read_available) // packet_len만큼 읽기 가능?
+                    {
+                        // CRC(little endian L,H)
+                        uint16_t crc = static_cast<uint16_t>(rx_buffer[rx_buffer[idx + pi_protocol::PKT_LENGTH]-1]) | // L byte
+                                        (static_cast<uint16_t>(rx_buffer[rx_buffer[idx + pi_protocol::PKT_LENGTH]]) << 8); // H byte
+                        uint16_t calculated_crc = updateCRC(0, &rx_buffer[idx], rx_buffer[idx + pi_protocol::PKT_LENGTH]-2); //without crc 2 byte
 
-//26-10-02
-0x..... 10-03일 작성필요
+                        if(crc == calculated_crc){
+                            // rxpacket= DATA(N) + 9 (FF FF FD 00 LEN ID INST DATA CRC_L CRC_H)
+                            rxpacket.data_len = rx_buffer[idx + pi_protocol::PKT_LENGTH] - 9;
+                            rxpacket.id = rx_buffer[idx + pi_protocol::PKT_ID];
+                            rxpacket.inst = rx_buffer[idx + pi_protocol::PKT_INSTRUCTION];
+                            memcpy(rxpacket.data,&rx_parse_buffer[6],rxpacket.data_len);
+                            result = unstuffing(rxpacket.data, &rxpacket.data_len);
+                        }
+                        else:{
+                            idx += HEADER_LEN; // 헤더일 수 없는 바이트 건너뛰기
+                            found = false;
+                            continue;
+                        }
+                    }
+                }
+                else:
+                    continue;
+            else:
+                continue;
+            
+        }
+        
+    }
+    return result;
+}
+
+
+//26-10-02 링버퍼기반작동 rx_packet. task가 아닌 함수내에서 링버퍼 등록 및 수정함. but 링버퍼대문에 너무복잡해짐.
 pi_protocol::Comm_Result pi_comm::rx_packet(pi_protocol::rxpacket_t &rxpacket)
 {
     while(true)

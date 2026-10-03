@@ -62,8 +62,8 @@ namespace pi_protocol
         NO_DATA        = 2,
         INVALID_LENGTH = 3,
         CRC_ERR        = 4,
-        BUF_LEN_OVER   = 5,
-        BUF_NUM_OVER   = 6,
+        BUFFER_FULL    = 5;
+        QUEUE_FULL     = 6,
         RX_CORRUPT     = 7,
         RX_TIMEOUT     = 8,
         CDC_ERR        = 9

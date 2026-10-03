@@ -7,32 +7,33 @@ void pi_comm::rx_task(void *arg)
     pi_comm *self = static_cast<pi_comm *>(arg);
     pi_protocol::rxpacket_t rxpacket;
     constexpr int64_t RX_TIMEOUT_US = static_cast<int64_t>(RX_TIMEOUT_MS) * 1000;
+    
 
     while (true)
     {
         TickType_t wait_ticks;
 
-        if (self->rx_parse_start_time_us != 0)
+        if (self->rx_parse_start_time_us != 0){
             const int64_t elapsed_us = esp_timer_get_time() - self->rx_parse_start_time_us;
             if (elapsed_us >= RX_TIMEOUT_US)
             {
-                self->rx_parse_length = 0;
-                self->rx_packet_len = 0;
                 self->rx_parse_start_time_us = 0;
-                self->rx_debug_buffer.clear();
-
+                read_available = 0;
+                idx = 0;
+                found = false;
                 // RX timeout 처리
                 self->tx_packet();
 
                 continue;
             }
 
-            wait_ticks = RX_TIMEOUT_US - elapsed_us;
+            const int64_t remain_us = RX_TIMEOUT_US - elapsed_us;
+            wait_ticks = pdMS_TO_TICKS(static_cast<uint32_t>((remain_us + 999) / 1000));
             if (wait_ticks == 0) // Avoid immediate return when tick resolution is coarse.
                 wait_ticks = 1;
         else
             wait_ticks = portMAX_DELAY;
-
+        }
         BaseType_t notified = xTaskNotifyWait(0,0xFFFFFFFF,&notify_value,wait_ticks);
 
         if (notified == pdFALSE && self->rx_parse_start_time_us != 0) // RX_timeout
@@ -54,10 +55,13 @@ void pi_comm::rx_task(void *arg)
                     if (xQueueSend(self->rx_queue,&self->rxpacket,0) != pdTRUE)
                         // BUF_NUM_OVER
                     continue;
+                case Comm_Result::NO_DATA:
                 case Comm_Result::NEED_MORE_DATA:
                     break;
-                case Comm_Result::FAIL:
+                case Comm_Result::BUFFER_FULL:
                     tx_err();
+                    idx = 0;
+                    found = false;
                     break;
             }
             break;
@@ -65,16 +69,13 @@ void pi_comm::rx_task(void *arg)
     }
 }
 
-//26-10-03 링버퍼대신 일반버퍼 사용. 사용후 memmove필요. 그러나 memmove 소요 길지 않음.
-//->일단 rx_buffer를 선형으로 1kb정도 잡는다. 
 pi_protocol::Comm_Result pi_comm::rx_packet(pi_protocol::rxpacket_t &rxpacket)
 {
     while(true)
     {   
-        write_available = rx_buffer_size - read_available;
-        if(write_available)
+        if(rx_buffer_size >= read_available)
             std::size_t rx_size = 0;
-            const esp_err_t ret = tinyusb_cdcacm_read(itf, &rx_buffer, write_available, &rx_size);
+            const esp_err_t ret = tinyusb_cdcacm_read(itf, &rx_buffer, rx_buffer_size - read_available, &rx_size);
             if (ret != ESP_OK)
                 result = Comm_Result::CDC_ERR;
                 break;
@@ -82,19 +83,20 @@ pi_protocol::Comm_Result pi_comm::rx_packet(pi_protocol::rxpacket_t &rxpacket)
                 result =  Comm_Result::NO_DATA;
                 break;
             read_available += rx_size;
-        else:// 최후의 보루. 절대 가득 차지 않게 관리.
-            pass;
         
         if(!found)
         {
             limit_idx = read_available - header_len;
-            while (idx < limit_idx) // limit이전까지만 헤더 확인 가능'
+            while (idx <= limit_idx) // limit이전까지만 헤더 확인 가능'
             {
-                uint8_t *p = (uint8_t *)memchr(&rx_buffer[idx], 0xFF, (size_t)(limit_idx - idx)); // memchr(시작주소, 찾을값, 검색할바이트수);
+                uint8_t *p = (uint8_t *)memchr(&rx_buffer[idx], 0xFF, (size_t)(limit_idx - idx + 1)); // memchr(시작주소, 찾을값, 검색할바이트수);
                 if (p == nullptr)
                 {
                     idx = limit_idx;   // 남은 구간에 0xFF 없으므로 더 볼 필요 없음
-                    result = Comm_Result::NEED_MORE_DATA;
+                    if(idx == rx_buffer_size - header_len)
+                        result = Comm_Result::BUFFER_FULL;
+                    else:
+                        result = Comm_Result::NEED_MORE_DATA;
                     break;
                 }
                 idx = (uint16_t)(p - rx_buffer);
@@ -109,7 +111,8 @@ pi_protocol::Comm_Result pi_comm::rx_packet(pi_protocol::rxpacket_t &rxpacket)
         if(found)
         {
             if(idx + header_len + 3 <= read_available) // len,id,inst 필드 읽기 가능
-                if(rx_buffer[idx + pi_protocol::PKT_LENGTH] > pi_protocol::RXPACKET_MAX_LEN || // 잘못된 LEN
+                if(rx_buffer[idx + pi_protocol::PKT_LENGTH] > pi_protocol::RXPACKET_MAX_LEN  || // 잘못된 LEN 
+                    rx_buffer[idx + pi_protocol::PKT_LENGTH] < pi_protocol::RXPACKET_MIN_LEN || // 잘못된 LEN
                     rx_buffer[idx + pi_protocol::PKT_ID] <= prev_id || // 잘못된 id
                     rx_buffer[idx + pi_protocol::PKT_INSTRUCTION] = ?? // 잘못된 inst
                 ){
@@ -118,23 +121,27 @@ pi_protocol::Comm_Result pi_comm::rx_packet(pi_protocol::rxpacket_t &rxpacket)
                     continue;
                 }
                 else:{ //정상적이라고 가정되는 header,len,id,inst 필드에 대해 data읽고 crc확인
-                    if(idx + rx_buffer[idx + pi_protocol::PKT_LENGTH] <= read_available) // packet_len만큼 읽기 가능여부
+                    const uint16_t packet_len = rx_buffer[idx + pi_protocol::PKT_LENGTH];
+                    if(idx + packet_len <= read_available) // packet_len만큼 읽기 가능여부
                     {
                         // CRC(little endian L,H)
-                        uint16_t crc = static_cast<uint16_t>(rx_buffer[rx_buffer[idx + pi_protocol::PKT_LENGTH]-1]) | // L byte
-                                        (static_cast<uint16_t>(rx_buffer[rx_buffer[idx + pi_protocol::PKT_LENGTH]]) << 8); // H byte
-                        uint16_t calculated_crc = updateCRC(0, &rx_buffer[idx], rx_buffer[idx + pi_protocol::PKT_LENGTH]-2); //without crc 2 byte
+                        uint16_t crc = static_cast<uint16_t>(rx_buffer[packet_len-2]) | // L byte
+                                        (static_cast<uint16_t>(rx_buffer[packet_len-1]) << 8); // H byte
+                        uint16_t calculated_crc = updateCRC(0, &rx_buffer[idx], packet_len-2); //without crc 2 byte
 
                         if(crc == calculated_crc){
-                            // rxpacket= DATA(N) + 9 (FF FF FD 00 LEN ID INST DATA CRC_L CRC_H)
-                            rxpacket.data_len = rx_buffer[idx + pi_protocol::PKT_LENGTH] - 9;
+                            // (FF FF FD 00 LEN ID INST DATA CRC_L CRC_H)
+                            rxpacket.data_len = packet_len - 9; // rxpacket_len = DATA(N) + 9 
                             rxpacket.id = rx_buffer[idx + pi_protocol::PKT_ID];
                             rxpacket.inst = rx_buffer[idx + pi_protocol::PKT_INSTRUCTION];
-                            memcpy(rxpacket.data,&rx_parse_buffer[6],rxpacket.data_len);
+                            memcpy(rxpacket.data,&rx_buffer[idx+pi_protocol::PKT_DATA],rxpacket.data_len);
                             result = unstuffing(rxpacket.data, &rxpacket.data_len);
 
-                            read_available = 0;
+                            // prepare for next
+                            memmove(rx_buffer,rx_buffer + idx + packet_len,read_available - (idx + packet_len));
+                            read_available -= idx + packet_len;
                             idx = 0;
+                            found = false;
                             break;
                         }
                         else:{
@@ -495,9 +502,6 @@ pi_protocol::Comm_Result pi_comm::rx_packet(pi_protocol::rxpacket_t &rxpacket)
     rx_packet_len = 0;
     return result;
 }
-
-
-
 
 // esp-pi
 static int protocol::rxPacket(int itf)

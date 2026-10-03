@@ -121,15 +121,16 @@ std::size_t RingBuffer<T>::find(const T& value, std::size_t start) const
 }
 
 template <typename T>
-std::size_t RingBuffer<T>::find(const T* pattern, std::size_t pattern_len, std::size_t start) const
+bool RingBuffer<T>::find(const T* pattern,std::size_t pattern_len,std::size_t start,std::size_t& found_idx) const
 {
     if (pattern_len == 0 || start >= count || pattern_len > count - start)
-        return count;
+        return false;
 
-    for (std::size_t i = start; i + pattern_len <= count; ++i) //sliding
+    for (std::size_t i = start; i + pattern_len <= count; ++i)
     {
         bool matched = true;
-        for (std::size_t j = 0; j < pattern_len; ++j) //find_head
+
+        for (std::size_t j = 0; j < pattern_len; ++j)
         {
             const std::size_t index = (read_idx + i + j) % capacity;
             if (buffer[index] != pattern[j])
@@ -138,22 +139,22 @@ std::size_t RingBuffer<T>::find(const T* pattern, std::size_t pattern_len, std::
                 break;
             }
         }
+
         if (matched)
-            return i;
+        {
+            found_idx = i;
+            return true;
+        }
     }
-    return count;
+    return false;
 }
 
+
 template <typename T>
-bool RingBuffer<T>::peek(std::size_t offset, T& data) const
+T RingBuffer<T>::get(std::size_t offset) const
 {
-    if (offset >= count)
-        return false;
-
     const std::size_t index = (read_idx + offset) % capacity;
-    data = buffer[index];
-
-    return true;
+    return buffer[index];
 }
 
 template <typename T>

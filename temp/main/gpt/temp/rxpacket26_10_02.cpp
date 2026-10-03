@@ -85,7 +85,6 @@ pi_protocol::Comm_Result pi_comm::rx_packet(pi_protocol::rxpacket_t &rxpacket)
 
             uint8_t* write_ptr = nullptr;
             std::size_t write_len = 0;
-
             if (rx_buffer.get_write_ptr(write_ptr, cdc_available, write_len))
             {
                 std::size_t rx_size = 0;
@@ -103,8 +102,26 @@ pi_protocol::Comm_Result pi_comm::rx_packet(pi_protocol::rxpacket_t &rxpacket)
 
         while(rx_buffer.available() > 0)
         {   
-            std::size_t header_idx = rx_buffer.find(pattern, pattern_len, 0);
-            if (header_idx == rx_buffer.available()) // NOT FOUND
+            std::size_t header_idx;
+            if (rx_buffer.find(header, header_len, 0, header_idx))
+            {
+                //header_idx부터 min length만큼 버퍼가 
+                if(rx_buffer.peek(header_idx + header_len,packet_len)) //len field 읽기가능?
+                    if(packet_len <= pi_protocol::RXPACKET_MAX_LEN && packet_len >= pi_protocol::RXPACKET_MIN_LEN)
+                        if(rx_buffer.available() >= header_idx + packet_len) // data field 읽기 가능?
+                            rx_buffer.peek(header_idx,packet_len,)
+                        else:
+                    else:
+                        // len 오류
+                else:
+                    if (rx_buffer.full())
+                    {
+                        min_length만큼 read해서 저장공간 늘려줌
+                        result = Comm_Result::NEED_MORE_DATA;
+                    }
+                    else:   
+            }
+            else: // NOT FOUND
             {   
                 if (rx_buffer.full())
                     //header-1만큼 바이트 남겨두고 다 읽어서 저장공간늘려줌.
@@ -112,21 +129,6 @@ pi_protocol::Comm_Result pi_comm::rx_packet(pi_protocol::rxpacket_t &rxpacket)
                 break;
             }
             else:
-            {
-                //header_idx부터 min length만큼 버퍼가 
-                if(헤더 다음인 id필드 읽을수있음?)
-                    packet_len = ?;
-                else:
-                    if (rx_buffer.full())
-                    {
-                        min_length만큼 read해서 저장공간 늘려줌
-                        result = Comm_Result::NEED_MORE_DATA;
-                    }
-                    else:
-
-
-                    
-            }
 
             rx_buffer.read(packet, packet_length);// 패킷완성후 읽기
         }

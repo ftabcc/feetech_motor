@@ -21,9 +21,9 @@ public:
     std::size_t read(T* data, std::size_t len); // Read multiple objects
 
     std::size_t find(const T& value, std::size_t start = 0) const;
-    std::size_t find(const T* pattern, std::size_t pattern_len, std::size_t start = 0) const;
+    bool find(const T* pattern,std::size_t pattern_len,std::size_t start,std::size_t& found_idx) const;
 
-    bool peek(std::size_t offset, T& data) const;
+    bool get(std::size_t offset) const;
     std::size_t peek(T* data, std::size_t len, std::size_t offset = 0) const;
 
     bool get_write_ptr(T*& ptr, std::size_t requested_len, std::size_t& write_len); 

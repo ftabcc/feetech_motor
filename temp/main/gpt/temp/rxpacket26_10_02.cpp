@@ -65,6 +65,72 @@ void pi_comm::rx_task(void *arg)
 
 
 // 26-10-03.buff full시 tx_debug보내고 보낸만큼 memmove하기
+//rx_task랑 rx_packet set로 만드는중.
+'''26-10-03이후 여기서 부터 수정필요.'''
+void pi_comm::rx_task(void *arg)
+{
+    pi_comm *self = static_cast<pi_comm *>(arg);
+    pi_protocol::rxpacket_t rxpacket;
+    constexpr int64_t RX_TIMEOUT_US = static_cast<int64_t>(RX_TIMEOUT_MS) * 1000;
+    
+    while (true)
+    {
+        TickType_t wait_ticks;
+
+        if (self->rx_parse_start_time_us != 0){
+            const int64_t elapsed_us = esp_timer_get_time() - self->rx_parse_start_time_us;
+            if (elapsed_us >= RX_TIMEOUT_US)
+            {
+                self->rx_parse_start_time_us = 0;
+                read_available = 0;
+                idx = 0;
+                found = false;
+                // RX timeout 처리
+                self->tx_packet();
+                continue;
+            }
+            const int64_t remain_us = RX_TIMEOUT_US - elapsed_us;
+            wait_ticks = pdMS_TO_TICKS(static_cast<uint32_t>((remain_us + 999) / 1000));
+            if (wait_ticks == 0) // Avoid immediate return when tick resolution is coarse.
+                wait_ticks = 1;
+        else
+            wait_ticks = portMAX_DELAY;
+        }
+        BaseType_t notified = xTaskNotifyWait(0,0xFFFFFFFF,&notify_value,wait_ticks);
+        if (notified == pdFALSE && self->rx_parse_start_time_us != 0) // RX_timeout
+        {
+            self->rx_parse_start_time_us = 0;
+            self->tx_packet();
+            continue;
+        }
+
+        while (true)
+        {
+            Comm_Result result = self->rx_packet(rxpacket;);
+            switch (result)
+            {
+                case Comm_Result::SUCCESS:
+                    if (xQueueSend(self->rx_queue,&self->rxpacket,0) != pdTRUE)
+                        // BUF_NUM_OVER
+                    continue;
+                case Comm_Result::NO_DATA:
+                case Comm_Result::NEED_MORE_DATA:
+                    break;
+                case Comm_Result::BUFFER_FULL:
+                    if(found){
+                        send_len = min(before_found, packet_max_length);
+                    }
+                    else:
+                        send_len = packet_max_len;
+
+                    tx_err(rx_buffer,send_len);
+                    read_available -=send_len;
+                    idx -= send_len;
+            }
+            break;
+        }
+    }
+}
 pi_protocol::Comm_Result pi_comm::rx_packet(pi_protocol::rxpacket_t &rxpacket)
 {
     while(true)
@@ -93,11 +159,10 @@ pi_protocol::Comm_Result pi_comm::rx_packet(pi_protocol::rxpacket_t &rxpacket)
                 if (p == nullptr)
                 {
                     idx = limit_idx;   // 남은 구간에 0xFF 없으므로 더 볼 필요 없음
-                    if(idx = rx_buffer_size - header_len)
-                        //디버그용으로 프로토콜상 보낼수있는 최대만큼 남겨두고 memmove로 버퍼 비워주기.
-                    result = Comm_Result::NEED_MORE_DATA;
+                    if(rx_buffer_size > read_available)
+                        result = Comm_Result::NEED_MORE_DATA;
                     else:
-                        // result = Comm_Result::BUFFER_FULL;
+                        result = Comm_Result::BUFFER_FULL;
                     break;
                 }
                 idx = (uint16_t)(p - rx_buffer);
@@ -162,6 +227,10 @@ pi_protocol::Comm_Result pi_comm::rx_packet(pi_protocol::rxpacket_t &rxpacket)
     }
     return result;
 }
+
+
+
+
 // 26-10-03.buff full시 packet_max_len만큼 남기고 memmove하기
 pi_protocol::Comm_Result pi_comm::rx_packet(pi_protocol::rxpacket_t &rxpacket)
 {

@@ -69,7 +69,6 @@ void pi_comm::rx_task(void *arg)
 //->일단 rx_buffer를 선형으로 1kb정도 잡는다. 
 pi_protocol::Comm_Result pi_comm::rx_packet(pi_protocol::rxpacket_t &rxpacket)
 {
-    idx = 0;
     while(true)
     {   
         write_available = rx_buffer_size - read_available;
@@ -118,8 +117,8 @@ pi_protocol::Comm_Result pi_comm::rx_packet(pi_protocol::rxpacket_t &rxpacket)
                     found = false;
                     continue;
                 }
-                else:{
-                    if(idx + rx_buffer[idx + pi_protocol::PKT_LENGTH] <= read_available) // packet_len만큼 읽기 가능?
+                else:{ //정상적이라고 가정되는 header,len,id,inst 필드에 대해 data읽고 crc확인
+                    if(idx + rx_buffer[idx + pi_protocol::PKT_LENGTH] <= read_available) // packet_len만큼 읽기 가능여부
                     {
                         // CRC(little endian L,H)
                         uint16_t crc = static_cast<uint16_t>(rx_buffer[rx_buffer[idx + pi_protocol::PKT_LENGTH]-1]) | // L byte
@@ -133,6 +132,10 @@ pi_protocol::Comm_Result pi_comm::rx_packet(pi_protocol::rxpacket_t &rxpacket)
                             rxpacket.inst = rx_buffer[idx + pi_protocol::PKT_INSTRUCTION];
                             memcpy(rxpacket.data,&rx_parse_buffer[6],rxpacket.data_len);
                             result = unstuffing(rxpacket.data, &rxpacket.data_len);
+
+                            read_available = 0;
+                            idx = 0;
+                            break;
                         }
                         else:{
                             idx += HEADER_LEN; // 헤더일 수 없는 바이트 건너뛰기
@@ -140,14 +143,14 @@ pi_protocol::Comm_Result pi_comm::rx_packet(pi_protocol::rxpacket_t &rxpacket)
                             continue;
                         }
                     }
+                    else: // 정상적이라고 가정되는 packet_len이 덜받아짐.
+                        continue;
                 }
-                else:
-                    continue;
             else:
                 continue;
-            
         }
-        
+        else:
+            continue;
     }
     return result;
 }

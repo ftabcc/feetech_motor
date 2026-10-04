@@ -123,13 +123,11 @@ void pi_comm::rx_task(void *arg)
                     break;
                 case Comm_Result::CDC_ERR:
                     txpacket_t txpacket;
-                    txpacket.data_len = send_len;
+                    txpacket.data_len = min(idx+packet_len,pi_protocol::RXPACKET_MAX_LEN);
                     txpacket.id = ;
                     txpacket.inst = debug;
                     txpacket.err = CDC_ERR;
-                    read_available -= debug_len;
-                    idx -= debug_len;
-                    found = false;
+                    memcpy(txpacket.data,&rx_buffer[idx+packet_len-debug_len],txpacket.data_len); 
 
                     if(xQueueSend(self->rx_queue,&self->rxpacket,0) != pdTRUE){
                         // TX_QUEUE FULL;
@@ -137,15 +135,15 @@ void pi_comm::rx_task(void *arg)
                     break;
                 case Comm_Result::BUFFER_FULL:
                     txpacket_t txpacket;
-                    txpacket.data_len = send_len;
+                    txpacket.data_len = min(idx,pi_protocol::RXPACKET_MAX_LEN);
                     txpacket.id = ;
                     txpacket.inst = debug;
                     txpacket.err = BUFFER_FULL;
-                    memcpy(txpacket.data,rx_buffer,send_len);
-                    memmove(rx_buffer,rx_buffer + send_len,read_available - send_len);
-                    read_available -= send_len;
-                    idx -=send_len;
-                    found = false;
+                    memcpy(txpacket.data,rx_buffer,txpacket.data_len);
+
+                    memmove(rx_buffer,rx_buffer + txpacket.data_len,read_available - txpacket.data_len);
+                    read_available -= txpacket.data_len;
+                    idx -= txpacket.data_len;
 
                     if(xQueueSend(self->rx_queue,&self->rxpacket,0) != pdTRUE){
                         // TX_QUEUE FULL;
@@ -191,7 +189,6 @@ pi_protocol::Comm_Result pi_comm::rx_packet(pi_protocol::rxpacket_t &rxpacket)
                             result = Comm_Result::NEED_MORE_DATA;
                         else:
                             result = Comm_Result::BUFFER_FULL;
-                            send_len = pi_protocol::RXPACKET_MAX_LEN;
                         break;
                     }
                     idx = (uint16_t)(p - rx_buffer);
@@ -238,13 +235,12 @@ pi_protocol::Comm_Result pi_comm::rx_packet(pi_protocol::rxpacket_t &rxpacket)
                         break;
                     }
                     else:{
-                        debug_len = min(idx+packet_len,pi_protocol::RXPACKET_MAX_LEN);
-                        memcpy(debug_data,&rx_buffer[idx+packet_len-debug_len],debug_len); 
-                        '''그냥 바로 debug_data말고 txpacket.data에 복사?'''
                         // 손실패킷내 추가적 패킷 점검을 위해 memmove는 하지 않는다.
                         result = pi_protocol::Comm_Result::CRC_ERR;
                         break;
-                        // idx += HEADER_LEN; // 헤더일 수 없는 바이트 건너뛰기
+
+                        // 헤더일 수 없는 바이트 건너뛰기
+                        // idx += HEADER_LEN; 
                         // found = false;
                         // continue;
                     }
@@ -252,7 +248,6 @@ pi_protocol::Comm_Result pi_comm::rx_packet(pi_protocol::rxpacket_t &rxpacket)
             }
             // 정상적이라고 가정되는 packet_len이 덜받아짐.
             if(read_available == rx_buffer_size){
-                send_len = min(idx,pi_protocol::RXPACKET_MAX_LEN);
                 result = pi_protocol::Comm_Result::BUFFER_FULL;
                 break;
             }

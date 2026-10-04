@@ -147,7 +147,7 @@ pi_protocol::Comm_Result pi_comm::rx_packet(pi_protocol::rxpacket_t &rxpacket)
     {   
         if(rx_buffer_size > read_available){
             std::size_t rx_size = 0;
-            const esp_err_t ret = tinyusb_cdcacm_read(itf, &rx_buffer, rx_buffer_size - read_available, &rx_size);
+            const esp_err_t ret = tinyusb_cdcacm_read(itf, &rx_buffer[read_available], rx_buffer_size - read_available, &rx_size);
             if (ret != ESP_OK){
                 result = Comm_Result::CDC_ERR;
                 break;
@@ -164,6 +164,7 @@ pi_protocol::Comm_Result pi_comm::rx_packet(pi_protocol::rxpacket_t &rxpacket)
 
         if(!found){
             limit_idx = read_available - header_len;
+            if (read_available < header_len)'''
             while (idx <= limit_idx) // limit까지만 헤더 확인 가능
             {
                 uint8_t *p = (uint8_t *)memchr(&rx_buffer[idx], 0xFF, (size_t)(limit_idx - idx + 1)); // memchr(시작주소, 찾을값, 검색할바이트수);
@@ -245,7 +246,7 @@ pi_protocol::Comm_Result pi_comm::rx_packet(pi_protocol::rxpacket_t &rxpacket)
     {   
         if(rx_buffer_size > read_available){
             std::size_t rx_size = 0;
-            const esp_err_t ret = tinyusb_cdcacm_read(itf, &rx_buffer, rx_buffer_size - read_available, &rx_size);
+            const esp_err_t ret = tinyusb_cdcacm_read(itf, &rx_buffer[read_available], rx_buffer_size - read_available, &rx_size);
             if (ret != ESP_OK)
                 result = Comm_Result::CDC_ERR;
                 break;

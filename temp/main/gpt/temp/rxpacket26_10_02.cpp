@@ -78,7 +78,7 @@ void pi_comm::rx_task(void *arg)
 
         if (self->rx_parse_start_time_us != 0){
             const int64_t elapsed_us = esp_timer_get_time() - self->rx_parse_start_time_us;
-            if (elapsed_us >= pi_protocol::RX_TIMEOUT_US) // data 들어오고 나서 timeout
+            if (elapsed_us >= pi_protocol::RX_TIMEOUT_US)
             {
                 self->rx_parse_start_time_us = 0;
                 send_len = min(read_available,pi_protocol::RXPACKET_MAX_LEN);
@@ -92,24 +92,21 @@ void pi_comm::rx_task(void *arg)
 
                 idx = 0;
                 found = false;
-                // RX timeout 처리
-                self->tx_packet();
+                read_available = 0;
+                if(xQueueSend(self->rx_queue,&self->rxpacket,0) != pdTRUE){
+                    // TXQUEUE FULL;
+                }
                 continue;
             }
-            const int64_t remain_us = pi_protocol::RX_TIMEOUT_US - elapsed_us;
-            wait_ticks = pdMS_TO_TICKS(static_cast<uint32_t>((remain_us + 999) / 1000));
+            wait_ticks = pdMS_TO_TICKS(static_cast<uint32_t>((pi_protocol::RX_TIMEOUT_US - elapsed_us; + 999) / 1000));
             if (wait_ticks == 0) // Avoid immediate return when tick resolution is coarse.
                 wait_ticks = 1;
-        else
+        else:
             wait_ticks = portMAX_DELAY;
         }
         BaseType_t notified = xTaskNotifyWait(0,0xFFFFFFFF,&notify_value,wait_ticks);
-        if (notified == pdFALSE && self->rx_parse_start_time_us != 0) // RX_timeout
-        {
-            self->rx_parse_start_time_us = 0;
-            self->tx_packet();
-            continue;
-        }
+        if (notified == pdFALSE && self->rx_parse_start_time_us != 0)
+            continue; // 위에서 timeout check
 
         while (true)
         {
@@ -118,18 +115,12 @@ void pi_comm::rx_task(void *arg)
             {
                 case Comm_Result::SUCCESS:
                     if (xQueueSend(self->rx_queue,&self->rxpacket,0) != pdTRUE)
-                        // BUF_NUM_OVER
+                        // RX_QUEUE FULLl, 가장 최근 하나만 남기기.
                     continue;
                 case Comm_Result::NO_DATA:
                 case Comm_Result::NEED_MORE_DATA:
                     break;
                 case Comm_Result::BUFFER_FULL:
-                    if(found){
-                        send_len = min(before_found, packet_max_length);
-                    }
-                    else:
-                        send_len = packet_max_len;
-
                     tx_err(rx_buffer,send_len);
                     read_available -=send_len;
                     idx -= send_len;

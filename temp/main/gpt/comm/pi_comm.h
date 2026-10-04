@@ -66,13 +66,12 @@ namespace pi_protocol
         SUCCESS        = 0,
         NEED_MORE_DATA = 1,
         NO_DATA        = 2,
-        INVALID_LENGTH = 3,
-        CRC_ERR        = 4,
-        BUFFER_FULL    = 5;
-        QUEUE_FULL     = 6,
+        CRC_ERR        = 3,
+        CDC_ERR        = 4,
+        RXBUFFER_FULL  = 5,
+        RXQUEUE_FULL   = 6;
         RX_CORRUPT     = 7,
         RX_TIMEOUT     = 8,
-        CDC_ERR        = 9
     };
 }
 

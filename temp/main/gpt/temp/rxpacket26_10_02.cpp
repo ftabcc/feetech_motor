@@ -123,11 +123,11 @@ void pi_comm::rx_task(void *arg)
                     break;
                 case Comm_Result::CDC_ERR:
                     txpacket_t txpacket;
-                    txpacket.data_len = min(idx+packet_len,pi_protocol::RXPACKET_MAX_LEN);
+                    txpacket.data_len = min(idx+packet_len,pi_protocol::RXPACKET_MAX_LEN); // packet_end이전까지 보낼수 있는 최대치
                     txpacket.id = ;
                     txpacket.inst = debug;
                     txpacket.err = CDC_ERR;
-                    memcpy(txpacket.data,&rx_buffer[idx+packet_len-debug_len],txpacket.data_len); 
+                    memcpy(txpacket.data,&rx_buffer[idx+packet_len-debug_len],txpacket.data_len);
 
                     if(xQueueSend(self->rx_queue,&self->rxpacket,0) != pdTRUE){
                         // TX_QUEUE FULL;
@@ -135,7 +135,7 @@ void pi_comm::rx_task(void *arg)
                     break;
                 case Comm_Result::BUFFER_FULL:
                     txpacket_t txpacket;
-                    txpacket.data_len = min(idx,pi_protocol::RXPACKET_MAX_LEN);
+                    txpacket.data_len = min(idx,pi_protocol::RXPACKET_MAX_LEN); 
                     txpacket.id = ;
                     txpacket.inst = debug;
                     txpacket.err = BUFFER_FULL;
@@ -178,7 +178,7 @@ pi_protocol::Comm_Result pi_comm::rx_packet(pi_protocol::rxpacket_t &rxpacket)
         }
 
         if(!found){
-            if (read_available < header_len){
+            if (read_available > header_len){
                 limit_idx = read_available - header_len;
                 while (idx <= limit_idx) // limit까지만 헤더 확인 가능
                 {
@@ -210,6 +210,8 @@ pi_protocol::Comm_Result pi_comm::rx_packet(pi_protocol::rxpacket_t &rxpacket)
                 ){
                     idx += HEADER_LEN; // 헤더일 수 없는 바이트 건너뛰기
                     found = false;
+                    if(read_available == rx_buffer_size)
+                        result = pi_protocol::Comm_Result::BUFFER_FULL;
                     continue;
                 }
             
@@ -237,6 +239,7 @@ pi_protocol::Comm_Result pi_comm::rx_packet(pi_protocol::rxpacket_t &rxpacket)
                     else:{
                         // 손실패킷내 추가적 패킷 점검을 위해 memmove는 하지 않는다.
                         result = pi_protocol::Comm_Result::CRC_ERR;
+                        ''' buffer_size비교해서 버퍼 full일수도있어서 처리해야함. '''
                         break;
 
                         // 헤더일 수 없는 바이트 건너뛰기

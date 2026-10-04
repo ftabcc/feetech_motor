@@ -121,9 +121,21 @@ void pi_comm::rx_task(void *arg)
                 case Comm_Result::NEED_MORE_DATA:
                     break;
                 case Comm_Result::BUFFER_FULL:
-                    tx_err(rx_buffer,send_len);
-                    read_available -=send_len;
-                    idx -= send_len;
+                    
+                    txpacket_t txpacket;
+                    txpacket.data_len = send_len;
+                    txpacket.id = ;
+                    txpacket.inst = debug;
+                    txpacket.err = BUFFER_FULL;
+                    memcpy(txpacket.data,rx_buffer,send_len);
+                    memmove(rx_buffer,rx_buffer + send_len,read_available - send_len);
+                    read_available -= send_len;
+                    idx -=send_len;
+                    found = false;
+
+                    if(xQueueSend(self->rx_queue,&self->rxpacket,0) != pdTRUE){
+                        // TX_QUEUE FULL;
+                    }
             }
             break;
         }

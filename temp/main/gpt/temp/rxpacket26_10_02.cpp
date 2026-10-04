@@ -71,7 +71,6 @@ void pi_comm::rx_task(void *arg)
 {
     pi_comm *self = static_cast<pi_comm *>(arg);
     pi_protocol::rxpacket_t rxpacket;
-    constexpr int64_t RX_TIMEOUT_US = static_cast<int64_t>(RX_TIMEOUT_MS) * 1000;
     
     while (true)
     {
@@ -79,17 +78,25 @@ void pi_comm::rx_task(void *arg)
 
         if (self->rx_parse_start_time_us != 0){
             const int64_t elapsed_us = esp_timer_get_time() - self->rx_parse_start_time_us;
-            if (elapsed_us >= RX_TIMEOUT_US)
+            if (elapsed_us >= pi_protocol::RX_TIMEOUT_US) // data 들어오고 나서 timeout
             {
                 self->rx_parse_start_time_us = 0;
-                read_available = 0;
+                send_len = min(read_available,pi_protocol::RXPACKET_MAX_LEN);
+
+                txpacket_t txpacket;
+                txpacket.data_len = send_len;
+                txpacket.id = ;
+                txpacket.inst = debug;
+                txpacket.err = timeout;
+                memcpy(txpacket.data,&rx_buffer[read_available - send_len],send_len);
+
                 idx = 0;
                 found = false;
                 // RX timeout 처리
                 self->tx_packet();
                 continue;
             }
-            const int64_t remain_us = RX_TIMEOUT_US - elapsed_us;
+            const int64_t remain_us = pi_protocol::RX_TIMEOUT_US - elapsed_us;
             wait_ticks = pdMS_TO_TICKS(static_cast<uint32_t>((remain_us + 999) / 1000));
             if (wait_ticks == 0) // Avoid immediate return when tick resolution is coarse.
                 wait_ticks = 1;

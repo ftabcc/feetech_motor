@@ -80,6 +80,7 @@ void pi_comm::rx_task(void *arg)
             const int64_t elapsed_us = esp_timer_get_time() - self->rx_parse_start_time_us;
             if (elapsed_us >= pi_protocol::RX_TIMEOUT_US)
             {
+                ''' 한번더 확인할 기회주기.'''
                 self->rx_parse_start_time_us = 0;
                 send_len = min(read_available,pi_protocol::RXPACKET_MAX_LEN);
 
@@ -93,7 +94,7 @@ void pi_comm::rx_task(void *arg)
                 idx = 0;
                 found = false;
                 read_available = 0;
-                if(xQueueSend(self->rx_queue,&self->rxpacket,0) != pdTRUE){
+                if(xQueueSend(self->tx_queue,&self->txpacket,0) != pdTRUE){
                     // TXQUEUE FULL;
                 }
                 continue;
@@ -120,8 +121,21 @@ void pi_comm::rx_task(void *arg)
                 case Comm_Result::NO_DATA:
                 case Comm_Result::NEED_MORE_DATA:
                     break;
+                case Comm_Result::CDC_ERR:
+                    txpacket_t txpacket;
+                    txpacket.data_len = send_len;
+                    txpacket.id = ;
+                    txpacket.inst = debug;
+                    txpacket.err = CDC_ERR;
+                    read_available -= debug_len;
+                    idx -= debug_len;
+                    found = false;
+
+                    if(xQueueSend(self->rx_queue,&self->rxpacket,0) != pdTRUE){
+                        // TX_QUEUE FULL;
+                    }
+                    break;
                 case Comm_Result::BUFFER_FULL:
-                    
                     txpacket_t txpacket;
                     txpacket.data_len = send_len;
                     txpacket.id = ;
@@ -143,6 +157,9 @@ void pi_comm::rx_task(void *arg)
 }
 pi_protocol::Comm_Result pi_comm::rx_packet(pi_protocol::rxpacket_t &rxpacket)
 {
+    if (rx_parse_start_time_us == 0)
+        rx_parse_start_time_us = esp_timer_get_time();
+
     while(true)
     {   
         if(rx_buffer_size > read_available){
@@ -163,31 +180,32 @@ pi_protocol::Comm_Result pi_comm::rx_packet(pi_protocol::rxpacket_t &rxpacket)
         }
 
         if(!found){
-            limit_idx = read_available - header_len;
-            if (read_available < header_len)'''
-            while (idx <= limit_idx) // limit까지만 헤더 확인 가능
-            {
-                uint8_t *p = (uint8_t *)memchr(&rx_buffer[idx], 0xFF, (size_t)(limit_idx - idx + 1)); // memchr(시작주소, 찾을값, 검색할바이트수);
-                if (p == nullptr){
-                    idx = limit_idx;   // 남은 구간에 0xFF 없으므로 더 볼 필요 없음
-                    if(read_available < rx_buffer_size)
-                        result = Comm_Result::NEED_MORE_DATA;
-                    else:
-                        result = Comm_Result::BUFFER_FULL;
-                        send_len = pi_protocol::RXPACKET_MAX_LEN;
-                    break;
+            if (read_available < header_len){
+                limit_idx = read_available - header_len;
+                while (idx <= limit_idx) // limit까지만 헤더 확인 가능
+                {
+                    uint8_t *p = (uint8_t *)memchr(&rx_buffer[idx], 0xFF, (size_t)(limit_idx - idx + 1)); // memchr(시작주소, 찾을값, 검색할바이트수);
+                    if (p == nullptr){
+                        idx = limit_idx;   // 남은 구간에 0xFF 없으므로 더 볼 필요 없음
+                        if(read_available < rx_buffer_size)
+                            result = Comm_Result::NEED_MORE_DATA;
+                        else:
+                            result = Comm_Result::BUFFER_FULL;
+                            send_len = pi_protocol::RXPACKET_MAX_LEN;
+                        break;
+                    }
+                    idx = (uint16_t)(p - rx_buffer);
+                    if ((rx_buffer[idx + 1] == 0xFF) &&(rx_buffer[idx + 2] == 0xFD) &&(rx_buffer[idx + 3] == 0)){
+                        found = true;
+                        break;
+                    }
+                    idx += 1;
                 }
-                idx = (uint16_t)(p - rx_buffer);
-                if ((rx_buffer[idx + 1] == 0xFF) &&(rx_buffer[idx + 2] == 0xFD) &&(rx_buffer[idx + 3] == 0)){
-                    found = true;
-                    break;
-                }
-                idx += 1;
             }
         }
         if(found)
         {
-            if(read_available > idx + header_len + 3) // len,id,inst 필드 읽기 가능
+            if(read_available > idx + header_len + 3){ // len,id,inst 필드 읽기 가능
                 if(rx_buffer[idx + pi_protocol::PKT_LENGTH] > pi_protocol::RXPACKET_MAX_LEN  || // 잘못된 LEN 
                     rx_buffer[idx + pi_protocol::PKT_LENGTH] < pi_protocol::RXPACKET_MIN_LEN || // 잘못된 LEN
                     rx_buffer[idx + pi_protocol::PKT_ID] <= prev_id || // 잘못된 id
@@ -201,8 +219,8 @@ pi_protocol::Comm_Result pi_comm::rx_packet(pi_protocol::rxpacket_t &rxpacket)
                 const uint16_t packet_len = rx_buffer[idx + pi_protocol::PKT_LENGTH];
                 if(idx + packet_len <= read_available){ // packet_len만큼 읽기 가능여부
                     // CRC(little endian L,H)
-                    uint16_t crc = static_cast<uint16_t>(rx_buffer[packet_len-2]) | // L byte
-                                    (static_cast<uint16_t>(rx_buffer[packet_len-1]) << 8); // H byte
+                    uint16_t crc = static_cast<uint16_t>(rx_buffer[idx + packet_len-2]) | // L byte
+                                    (static_cast<uint16_t>(rx_buffer[idx + packet_len-1]) << 8); // H byte
                     uint16_t calculated_crc = updateCRC(0, &rx_buffer[idx], packet_len-2); //without crc 2 byte
                     if(crc == calculated_crc){
                         // (FF FF FD 00 LEN ID INST DATA CRC_L CRC_H)
@@ -220,16 +238,24 @@ pi_protocol::Comm_Result pi_comm::rx_packet(pi_protocol::rxpacket_t &rxpacket)
                         break;
                     }
                     else:{
-                        idx += HEADER_LEN; // 헤더일 수 없는 바이트 건너뛰기
-                        found = false;
-                        continue;
+                        debug_len = min(idx+packet_len,pi_protocol::RXPACKET_MAX_LEN);
+                        memcpy(debug_data,&rx_buffer[idx+packet_len-debug_len],debug_len); 
+                        '''그냥 바로 debug_data말고 txpacket.data에 복사?'''
+                        // 손실패킷내 추가적 패킷 점검을 위해 memmove는 하지 않는다.
+                        result = pi_protocol::Comm_Result::CRC_ERR;
+                        break;
+                        // idx += HEADER_LEN; // 헤더일 수 없는 바이트 건너뛰기
+                        // found = false;
+                        // continue;
                     }
                 }
+            }
             // 정상적이라고 가정되는 packet_len이 덜받아짐.
-            if(read_available == rx_buffer_size)
+            if(read_available == rx_buffer_size){
                 send_len = min(idx,pi_protocol::RXPACKET_MAX_LEN);
                 result = pi_protocol::Comm_Result::BUFFER_FULL;
                 break;
+            }
             continue;
         }
     }

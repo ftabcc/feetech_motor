@@ -23,10 +23,16 @@ namespace pi_protocol
     // constexpr uint16_t PKT_ERROR        = 7;
     constexpr uint16_t PKT_DATA         = 7;
 
-    constexpr uint16_t RXPACKET_MAX_LEN = 255; // LEN field is 1 byte
-    constexpr uint16_t TXPACKET_MAX_LEN = 255;
-    constexpr uint16_t RXPACKET_MAX_NUM = 100;
-    constexpr uint16_t TXPACKET_MAX_NUM = 100;
+    constexpr uint8_t RX_TIMEOUT       = 0.1;
+    constexpr uint8_t RX_TIMEOUT_MS    = RX_TIMEOUT * 1000;
+    constexpr uint16_t RX_TIMEOUT_US   = RX_TIMEOUT_MS * 1000;
+
+    constexpr uint8_t RXPACKET_MAX_LEN = 255; // LEN field is 1 byte
+    constexpr uint8_t RXPACKET_MIN_LEN = 11;
+    constexpr uint8_t TXPACKET_MAX_LEN = 255;
+    constexpr uint8_t TXPACKET_MIN_LEN = 12;
+    constexpr uint8_t RXPACKET_MAX_NUM = 100;
+    constexpr uint8_t TXPACKET_MAX_NUM = 100;
     
     // rxpacket_len = DATA(N) + 9 (FF FF FD 00 LEN ID INST DATA CRC_L CRC_H)
     typedef struct

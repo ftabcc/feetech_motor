@@ -43,16 +43,13 @@ while(true)
 
 '''process'''
 while true
-    if(쓰기가능?)
-        //읽기
-        if (read!=0)
-            //버퍼쓰기
-        else
-            
-            if(buff_full)
-                // 가득참, idx전까지 최대로 보내고,당기기
-                break;
-    if(buff full)
+
+    '''읽기 단계. full인경우는 모두 밑에서 잡아내서 break되어 버퍼가 관리되었음.'''
+    // 가능한 만큼 cdc_read
+    if (read!=0)
+        // 버퍼 쓰기
+    else
+        // status.result = nmd
         break;
 
     if(!found)
@@ -60,59 +57,33 @@ while true
             whlie(idx <= read_avail - header_len)
                 //검색
                 if(header확인)
+                    found = true;
                     break;
                 if(nothing search)
                     idx = read_avail - header_len;
-                    if(read_available < rx_buffer_size)
-                        // 부족, 추가로 읽어오기
-                        continue;
-                    else:
-                        // 가득참, idx전까지 최대로 보내고,당기기
-                        break;
-                
+                    break;
                 idx+=1;
-        else: // 부족
-            if(read_available < rx_buffer_size)
-                // 부족, 추가로 읽어오기 
-            else:
-                // 가득참, idx전까지 최대로 보내고,당기고,읽기
-            if(buf full)
-                보내고 당기고
-            읽기
-
 
     if(found)
         if (len,id,inst 필드 읽기 가능?)
-            if(len,id,inst 가능)
+            if(len,id,inst 정상)
                 if (packet 필드 읽기 가능?)
                     if(crc=calculated_crc)
+                        // rxpacket 큐 생성 아직 안보냄.
                         // found = false
                         // idx, raed_av = 0
                         break;
                     else:
-                        //(필수)패킷이라 판단했던 바이트 + (가능한) 이전바이트 보내기
-                        if(read_available < rx_buffer_size)
-                            // 부족, 추가로 읽어오기
-                        else:
-                            // 가득참, idx전까지 최대로 보내고,당기기
-                else 
-                    if(read_available < rx_buffer_size)
-                        // 부족, 추가로 읽어오기
-                    else:
-                        // 가득참, idx전까지 최대로 보내고,당기기
+                        // status.err에 crc_err추가
             else
                 // found = false
                 // idx += header_len
-                if(read_available < rx_buffer_size)
-                        // 부족, 추가로 읽어오기
-                    else:
-                        // 가득참, idx전까지 최대로 보내고,당기기
 
-        else 
-            if(read_available < rx_buffer_size)
-                // 부족, 추가로 읽어오기
-            else:
-                // 가득참, idx전까지 최대로 보내고,당기기
+    if(full)
+        // status.err에 full추가
+        break;
+    else
+        // status.result = nmd
                 
 
 

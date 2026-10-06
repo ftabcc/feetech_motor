@@ -216,7 +216,8 @@ pi_protocol::Comm_Result pi_comm::rx_packet(pi_protocol::rxpacket_t &rxpacket)
                 }
             
                 const uint16_t packet_len = rx_buffer[idx + pi_protocol::PKT_LENGTH];
-                if(idx + packet_len <= read_available){ // packet_len만큼 읽기 가능여부
+                if(read_available >= idx + packet_len){ // packet_len만큼 읽기 가능여부
+                    '''만약 idx+packet_len 이 packet_max_len보다 길다면?'''
                     // CRC(little endian L,H)
                     uint16_t crc = static_cast<uint16_t>(rx_buffer[idx + packet_len-2]) | // L byte
                                     (static_cast<uint16_t>(rx_buffer[idx + packet_len-1]) << 8); // H byte
@@ -237,9 +238,12 @@ pi_protocol::Comm_Result pi_comm::rx_packet(pi_protocol::rxpacket_t &rxpacket)
                         break;
                     }
                     else:{
-                        // 손실패킷내 추가적 패킷 점검을 위해 memmove는 하지 않는다.
+                        // 패킷판단했던 바이트까지 가능한 debug보내기
+                        if(read_available >= pi_protocol::RXPACKET_MAX_LEN)
+                            // 맨앞부터 idx+header_len까지 불필요 바이트 비우고, 당기기.
+                        // idx+header_len이후 추가적 패킷 점검필요
+                            
                         result = pi_protocol::Comm_Result::CRC_ERR;
-                        ''' buffer_size비교해서 버퍼 full일수도있어서 처리해야함. '''
                         break;
 
                         // 헤더일 수 없는 바이트 건너뛰기

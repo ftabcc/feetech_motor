@@ -33,15 +33,10 @@ while(true)
         if(result = succes)
             if(rxpacket_queue == full)
                 // 다비우기? 다른조치취하기?
-            // 완성패킷 큐send
+            // 완성패킷 큐send, 추가로 패킷있을 수도 있어서 break안함.
         if(result = need_more_data)
             // 위에서 cdc callback의 notify받도록 break
             break;
-
-    
-
-
-
 
 '''process'''
 while true

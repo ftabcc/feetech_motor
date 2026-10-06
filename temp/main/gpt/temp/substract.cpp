@@ -17,7 +17,7 @@ while true
                     else:
                         // 가득참, idx전까지 최대로 보내고,당기기
                     break;
-        else:
+        else:해야할걸 확인못했을때
             if(read_available < rx_buffer_size)
                 // 부족, 추가로 읽어오기 
             '''더 받아올때, 버퍼가 가득찼는지 확인해야함. 아래 전체 수정필요.'''

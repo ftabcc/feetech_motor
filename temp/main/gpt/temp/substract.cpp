@@ -1,24 +1,25 @@
-'''나중에 cdc_read를 task안에서 해볼까?'''
+'''나중에 cdc_read를 task안에서 해볼까?'''안될것같은데.
 
+//26-10-06
 task(){
     while(true){
         if(rx_start_time!=0)
             elapsed_time = time - rx_start_time
-            if(elapsed_time > timeout)
+            if(elapsed_time > timeout)'''rx_start_time의 생명주기를 아주 명확하게 해야 함'''
                 // status.err에 timeout추가
-                '''여기서 timeout나오면 아래에서 notify wait하면 안되고 바로 err조치단계로 가야함.'''
+                '''timeout을 if로 process 통과하고 아래에서 처리하게 되면 이전 result보게될수도? 그래서 가능하면 timeout은 따로 여기서 관리하는게 나아보여.'''
             else
                 wait_time = time_out - elapsed_time;
         else
             wait_time = max;
 
-        if (!status.err == timeout)
+        if (!(status.err & timeout))
             notify = wait(wait_time)
             if (!notify)
                 // status.err에 timeout추가
 
         while (true){
-            if (!status.err == timeout)
+            if (!(status.err & timeout))
                 result = process();
 
             '''status.err 중복가능'''
@@ -39,7 +40,7 @@ task(){
                 // 완성패킷 큐send, 추가로 패킷있을 수도 있어서 break안함.
             if(result = need_more_data)
                 // 위에서 cdc callback의 notify받도록 break
-                break;
+                break; '''crc_err패킷다음에 연이어 정상패킷있는경우엔 여기서 나가게 되면 notify알람 못받음. break를 err특성에 따라 if로 관리해야함.'''
         }
     }
 }
@@ -47,16 +48,17 @@ task(){
 process(){
     while(true){
         '''읽기 단계. full인경우는 모두 밑에서 잡아내서 break되어 버퍼가 관리되었음.'''
-        // 가능한 만큼 cdc_read
+        '''보수적으로 읽기전에 불필요하게라도 버퍼full확인할까?'''
+        // 가능한 만큼 cdc_read 
+        if (ret!..)
+            // status.result = nmd
+            break;'''바로 break해도돼?'''
         if (read!=0)
             // 버퍼 쓰기
-        else
-            // status.result = nmd
-            break;
 
         '''헤더 찾기 단계'''
         if(!found)
-            if(read_avail >= idx + header_len)
+            if(read_avail >= idx + header_len) '''notify로 돌아왔을때 다음 바이트에서 1칸 중복 검색할 수 있음'''
                 whlie(idx <= read_avail - header_len)
                     // 검색
                     if(header check)
@@ -77,6 +79,8 @@ process(){
                             // found, start, idx, raed_av 초기화
                             break;
                         else:
+                            // found = false;
+                            // idx += header_len;
                             // status.err에 crc_err추가
                 else
                     // found = false

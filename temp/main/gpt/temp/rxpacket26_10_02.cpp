@@ -178,7 +178,7 @@ pi_protocol::Comm_Result pi_comm::rx_packet(pi_protocol::rxpacket_t &rxpacket)
         }
 
         if(!found){
-            if (read_available > header_len){
+            if (read_available > idx + header_len){
                 limit_idx = read_available - header_len;
                 while (idx <= limit_idx) // limit까지만 헤더 확인 가능
                 {

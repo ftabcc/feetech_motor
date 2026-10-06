@@ -1,91 +1,96 @@
 '''나중에 cdc_read를 task안에서 해볼까?'''
 
-'''TASK'''
-while(true)
-    if(rx_start_time!=0)
-        elapsed_time = time - rx_start_time
-        if(elapsed_time > timeout)
-            '''//rx_err보내기
-            // idx,found,start,read_av초기화
-            // continue'''
-            // err에 timeout추가
+task(){
+    while(true){
+        if(rx_start_time!=0)
+            elapsed_time = time - rx_start_time
+            if(elapsed_time > timeout)
+                // status.err에 timeout추가
+                '''여기서 timeout나오면 아래에서 notify wait하면 안되고 바로 err조치단계로 가야함.'''
+            else
+                wait_time = time_out - elapsed_time;
         else
-            wait_time = time_out - elapsed_time;
-    else
-        wait_time = max;
+            wait_time = max;
 
-    notify = wait(wait_time)
-    if (!notify)
-        // err에 timeout추가
+        if (!status.err == timeout)
+            notify = wait(wait_time)
+            if (!notify)
+                // status.err에 timeout추가
 
-    while (true)
-        result = process;
+        while (true){
+            if (!status.err == timeout)
+                result = process();
 
-        // com_err조치. 중복가능
-        if(err=crc_err)
-            //(필수)패킷이라 판단했던 바이트 + (가능한) 이전바이트 최대 보내기
-        if(err=buffer_full)
-            // 가득참, idx전까지 최대로 보내고,당기기
-        if(err=timeout)
-            // idx,found,start,read_av초기화
-        if(err=cdc_err)
-            // 조치미정
+            '''status.err 중복가능'''
+            if(err=crc_err)
+                // 패킷이라 판단했던 바이트는 필수로, 그 이전바이트는 가능한 많이 보내기
+            if(err=buffer_full)
+                // 시작부터 idx전까지 가능한 많이 보내고, 당기기
+            if(err=timeout)
+                // timeout정보 보내기
+                // idx,found,start,read_av초기화
+            if(err=cdc_err)
+                // 조치미정
 
-        // com_result조치. 중복불가
-        if(result = succes)
-            if(rxpacket_queue == full)
-                // 다비우기? 다른조치취하기?
-            // 완성패킷 큐send, 추가로 패킷있을 수도 있어서 break안함.
-        if(result = need_more_data)
-            // 위에서 cdc callback의 notify받도록 break
+            '''status.result 중복불가'''
+            if(result = succes)
+                if(rxpacket_queue == full)
+                    // 다비우기? 다른 조치 취하기?
+                // 완성패킷 큐send, 추가로 패킷있을 수도 있어서 break안함.
+            if(result = need_more_data)
+                // 위에서 cdc callback의 notify받도록 break
+                break;
+        }
+    }
+}
+
+process(){
+    while(true){
+        '''읽기 단계. full인경우는 모두 밑에서 잡아내서 break되어 버퍼가 관리되었음.'''
+        // 가능한 만큼 cdc_read
+        if (read!=0)
+            // 버퍼 쓰기
+        else
+            // status.result = nmd
             break;
 
-
-'''process'''
-while true
-
-    '''읽기 단계. full인경우는 모두 밑에서 잡아내서 break되어 버퍼가 관리되었음.'''
-    // 가능한 만큼 cdc_read
-    if (read!=0)
-        // 버퍼 쓰기
-    else
-        // status.result = nmd
-        break;
-
-    if(!found)
-        if(read_avail >= idx + header_len)
-            whlie(idx <= read_avail - header_len)
-                //검색
-                if(header확인)
-                    found = true;
-                    break;
-                if(nothing search)
-                    idx = read_avail - header_len;
-                    break;
-                idx+=1;
-
-    if(found)
-        if (len,id,inst 필드 읽기 가능?)
-            if(len,id,inst 정상)
-                if (packet 필드 읽기 가능?)
-                    if(crc=calculated_crc)
-                        // rxpacket 큐 생성 아직 안보냄.
-                        // found = false
-                        // idx, raed_av = 0
+        '''헤더 찾기 단계'''
+        if(!found)
+            if(read_avail >= idx + header_len)
+                whlie(idx <= read_avail - header_len)
+                    // 검색
+                    if(header check)
+                        found = true;
                         break;
-                    else:
-                        // status.err에 crc_err추가
-            else
-                // found = false
-                // idx += header_len
+                    if(nothing search)
+                        idx = read_avail - header_len;
+                        break;
+                    idx+=1;
 
-    if(full)
-        // status.err에 full추가
-        break;
-    else
-        // status.result = nmd
-                
+        '''패킷 확인 단계'''
+        if(found)
+            if (len,id,inst 필드 읽기 가능)
+                if(len,id,inst 정상)
+                    if (data 필드 읽기 가능)
+                        if(crc=calculated_crc)
+                            // 완료된 패킷저장
+                            // found, start, idx, raed_av 초기화
+                            break;
+                        else:
+                            // status.err에 crc_err추가
+                else
+                    // found = false
+                    // idx += header_len
 
+        '''다음 루프전 항상 확인'''
+        if(full)
+            // status.err에 full추가
+            break;
+        else
+            // status.result = nmd
+    }
+    return status;
+}
 
 '''save process'''
 while true

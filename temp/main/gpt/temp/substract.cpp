@@ -1,15 +1,68 @@
+'''TASK'''
+while(true)
+    if(rx_start_time!=0)
+        elapsed_time = time - rx_start_time
+        if(elapsed_time > timeout)
+            '''//rx_err보내기
+            // idx,found,start,read_av초기화
+            // continue'''
+            // err에 timeout추가
+        else
+            wait_time = time_out - elapsed_time;
+    else
+        wait_time = max;
+
+    notify = wait(wait_time)
+    if (!notify)
+        // err에 timeout추가
+
+    while (true)
+        result = process;
+
+        // com_err조치. 중복가능
+        if(err=crc_err)
+            //(필수)패킷이라 판단했던 바이트 + (가능한) 이전바이트 최대 보내기
+        if(err=buffer_full)
+            // 가득참, idx전까지 최대로 보내고,당기기
+        if(err=timeout)
+            // idx,found,start,read_av초기화
+        if(err=cdc_err)
+            // 조치미정
+
+        // com_result조치. 중복불가
+        if(result = succes)
+            if(rxpacket_queue == full)
+                // 다비우기? 다른조치취하기?
+            // 완성패킷 큐send
+        if(result = need_more_data)
+            // 위에서 cdc callback의 notify받도록 break
+            break;
+
+    
+
+
+
+
+'''process'''
 while true
     if(쓰기가능?)
-        //버퍼쓰기
+        //읽기
+        if (read!=0)
+            //버퍼쓰기
+        else
+            if(read_available < rx_buffer_size)
+                // 부족, 추가로 읽어오기
+            else:
+                // 가득참, idx전까지 최대로 보내고,당기기
     if(buff full)
         break;
-
-
 
     if(!found)
         if(read_avail >= idx + header_len)
             whlie(idx <= read_avail - header_len)
                 //검색
+                if(header확인)
+                    break;
                 if(nothing search)
                     idx = read_avail - header_len;
                     if(read_available < rx_buffer_size)
@@ -17,14 +70,16 @@ while true
                     else:
                         // 가득참, idx전까지 최대로 보내고,당기기
                     break;
-        else:해야할걸 확인못했을때
+                
+                idx+=1;
+        else: // 부족
             if(read_available < rx_buffer_size)
                 // 부족, 추가로 읽어오기 
-            '''더 받아올때, 버퍼가 가득찼는지 확인해야함. 아래 전체 수정필요.'''
             else:
-                // 가득참, idx전까지 최대로 보내고,당기기
-
-
+                // 가득참, idx전까지 최대로 보내고,당기고,읽기
+            if(buf full)
+                보내고 당기고
+            읽기
 
     if(found)
         if (len,id,inst 필드 읽기 가능?)

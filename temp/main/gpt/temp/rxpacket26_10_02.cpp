@@ -121,12 +121,14 @@ void pi_comm::rx_task(void *arg)
                 case Comm_Result::NO_DATA:
                 case Comm_Result::NEED_MORE_DATA:
                     break;
-                case Comm_Result::CDC_ERR:
+                case Comm_Result::CRC_ERR:
+                    break;
+                case Comm_Result::CRC_ERR:
                     txpacket_t txpacket;
                     txpacket.data_len = min(idx+packet_len,pi_protocol::RXPACKET_MAX_LEN); // packet_end이전까지 보낼수 있는 최대치
                     txpacket.id = ;
                     txpacket.inst = debug;
-                    txpacket.err = CDC_ERR;
+                    txpacket.err = CRC_ERR;
                     memcpy(txpacket.data,&rx_buffer[idx+packet_len-debug_len],txpacket.data_len);
 
                     if(xQueueSend(self->rx_queue,&self->rxpacket,0) != pdTRUE){

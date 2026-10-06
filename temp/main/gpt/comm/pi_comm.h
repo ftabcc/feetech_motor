@@ -60,18 +60,26 @@ namespace pi_protocol
         WRITE                = 0x02,
         STOP                 = 0x03
     };
-    // COMM_RESULT
-    enum class Comm_Result : uint8_t
-    {
+    // COMM_status
+    enum class Comm_Result : uint8_t{
         SUCCESS        = 0,
-        NEED_MORE_DATA = 1,
-        NO_DATA        = 2,
-        CRC_ERR        = 3,
-        CDC_ERR        = 4,
-        RXBUFFER_FULL  = 5,
-        RXQUEUE_FULL   = 6;
-        RX_CORRUPT     = 7,
-        RX_TIMEOUT     = 8,
+        NEED_MORE_DATA = 1, // NO DATA
+        FAIL           = 2,
+    };
+    enum Comm_Error : uint8_t{
+        CRC_ERR     = 1 << 0,  // 0000 0001
+        BUFFER_FULL = 1 << 1,  // 0000 0010
+        RX_TIMEOUT  = 1 << 2,  // 0000 0100
+        CDC_ERR     = 1 << 3,  // 0000 1000
+        // ???         = 1 << 4,  // 0001 0000
+        // ???         = 1 << 5,  // 0010 0000
+        // ???         = 1 << 6,  // 0100 0000
+        // ???         = 1 << 7,  // 1000 0000
+        
+    };
+    Comm_Status status{
+    .result = Comm_Result::SUCCESS,
+    .errors = 0
     };
 }
 

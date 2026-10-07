@@ -77,13 +77,11 @@ void pi_comm::rx_task(void *arg)
         TickType_t wait_ticks;
         if (self->rx_start_time_us != 0){
             const int64_t elapsed_us = esp_timer_get_time() - self->rx_start_time_us;
-
-
             const int64_t remaining_us = pi_protocol::RX_TIMEOUT_US - elapsed_us;
             if (remaining_us <= 0)
                 wait_ticks = 0;
             else:
-                wait_ticks = pdMS_TO_TICKS(static_cast<uint32_t>((pi_protocol::RX_TIMEOUT_US - elapsed_us; + 999) / 1000));
+                wait_ticks = pdMS_TO_TICKS(static_cast<uint32_t>((remaining_us; + 999) / 1000));
             if (wait_ticks == 0) // Avoid immediate return when tick resolution is coarse.
                 wait_ticks = 1;
         else:
@@ -100,7 +98,7 @@ void pi_comm::rx_task(void *arg)
             if (status.errors){
                 if(status.err & pi_protocol::Comm_Error::BUFFER_FULL{
                     while(true){ // 시작부터 idx전까지 가능한 많이 보내고, 당기기
-                        '''buffer가 full인데 idx가 0이면 문제생길듯'''
+                        '''buffer가 full인데 idx가 0이고 crc_err라면 당기기못해서 문제생길듯'''
                         txpacket_t txpacket;
                         txpacket.data_len = min(idx,pi_protocol::RXPACKET_MAX_LEN);
                         txpacket.id = debug_packet_id++;
@@ -254,7 +252,6 @@ pi_protocol::Comm_Result pi_comm::rx_packet(pi_protocol::rxpacket_t &rxpacket)
                         else:{
                             found = false;
                             status.errors |= pi_protocol::Comm_Error::CRC_ERR;
-                            '''crc err만들고 순수히 crc err만 있으면 계속 내려가고 while로 올라갈수있음'''
                         }
                     }
                 }
@@ -274,6 +271,8 @@ pi_protocol::Comm_Result pi_comm::rx_packet(pi_protocol::rxpacket_t &rxpacket)
             status.erros |= pi_protocol::Comm_Error::RX_TIMEOUT;
             break;
         }
+        if(status.errors != 0)
+            break;
     }
     if(self->rx_start_time_us != 0 && 
         (esp_timer_get_time() - self->rx_start_time_us) > pi_protocol::RX_TIMEOUT_US){

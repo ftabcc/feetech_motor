@@ -255,6 +255,7 @@ pi_protocol::Comm_Result pi_comm::rx_packet(pi_protocol::rxpacket_t &rxpacket)
                         else:{
                             found = false;
                             status.errors |= pi_protocol::Comm_Error::CRC_ERR;
+                            status.errors |= pi_protocol::Comm_Error::RX_DESYNC;
                         }
                     }
                 }

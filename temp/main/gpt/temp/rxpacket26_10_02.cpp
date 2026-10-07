@@ -250,12 +250,16 @@ pi_protocol::Comm_Result pi_comm::rx_packet(pi_protocol::rxpacket_t &rxpacket)
                             idx = 0;
                             found = false;
                             rx_start_time_us = 0;
+                            
+                            status.errors |= pi_protocol::Comm_Error::RX_DESYNC; 
                             break;
                         }
                         else:{
                             found = false;
                             status.errors |= pi_protocol::Comm_Error::CRC_ERR;
-                            status.errors |= pi_protocol::Comm_Error::RX_DESYNC;
+                            status.errors |= pi_protocol::Comm_Error::RX_DESYNC; 
+                            '''desync트리거를 success와 crc_err에서 발생시켜서 task에서 while로 앞의 확인한 쓰레기 바이트 비워주게하자.
+                            가능하면 success의 rxpacket생성하고 큐 보내는것도 통일성있게 task에서 진행가능?'''
                         }
                     }
                 }

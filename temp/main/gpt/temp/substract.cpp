@@ -91,6 +91,8 @@ process(){
                             // 완료된 패킷저장
                             // found, start 초기화;
                             // idx, raed_av 완료된 패킷까지 비우고 당기기
+                            '''desync트리거를 success와 crc_err에서 발생시켜서 task에서 while로 앞의 확인한 쓰레기 바이트 비워주게하자.
+                            가능하면 success의 rxpacket생성하고 큐 보내는것도 통일성있게 task에서 진행가능?'''
                             break;
                         else:
                             // found = false;

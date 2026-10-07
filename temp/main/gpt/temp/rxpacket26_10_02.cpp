@@ -165,7 +165,7 @@ void pi_comm::rx_task(void *arg)
                     if (xQueueSend(self->rx_queue, &self->rxpacket, 0) != pdTRUE){
                         xQueueReset(self->rx_queue);
                         xQueueSend(self->rx_queue, &self->rxpacket, 0);
-                    }
+                    }'''success에서도 이전 확인바이트들은 버리고 따로 보내야할텐데'''
                     continue; // 버퍼에 추가 패킷가능. break안함.
                 case pi_protocol::Comm_Result::FAILURE:
                     continue; // 버퍼에 추가 패킷가능. break안함.
@@ -192,7 +192,10 @@ pi_protocol::Comm_Result pi_comm::rx_packet(pi_protocol::rxpacket_t &rxpacket)
             status.result = pi_protocol::Comm_Result::PENDING;
             break; '''pending으로 바로 빠지면 안된다. 
             success에서 task로 갔다가 여기로 돌아오면 read가 0인데, 버퍼에 미확인데이터 남아있을수있다.
-            if read_available 확인필요
+            if read_available 확인필요->안됨
+            nmd상황에서 미리 pending걸어두고, succes는 미리 펜딩안걸려있으니 그 차이 활용?
+            success는 start, idx=0임.
+
             '''
         if (rx_start_time_us == 0)
             rx_start_time_us = esp_timer_get_time(); '''만약 성공패킷뒤에 패킷일부가 미리 들어와있는상황이라면 패킷성공후 0초로 바꾸면 의미 변질'''

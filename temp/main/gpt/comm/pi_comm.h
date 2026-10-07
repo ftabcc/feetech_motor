@@ -63,15 +63,15 @@ namespace pi_protocol
     // COMM_status
     enum class Comm_Result : uint8_t{
         SUCCESS        = 0,
-        WAIT           = 1,
-        FAIL           = 2,
+        PENDING        = 1,  //INCOMPLETE, need more data, Pending, wait
+        FAILURE        = 2,
     };
     enum Comm_Error : uint8_t{
-        CRC_ERR     = 1 << 0,  // 0000 0001
-        BUFFER_FULL = 1 << 1,  // 0000 0010
-        RX_TIMEOUT  = 1 << 2,  // 0000 0100
-        CDC_ERR     = 1 << 3,  // 0000 1000
-        // ???         = 1 << 4,  // 0001 0000
+        CRC_ERR        = 1 << 0,  // 0000 0001
+        BUFFER_FULL    = 1 << 1,  // 0000 0010
+        RX_TIMEOUT     = 1 << 2,  // 0000 0100
+        CDC_ERR        = 1 << 3,  // 0000 1000
+        RX_DESYNC      = 1 << 4,  // 0001 0000
         // ???         = 1 << 5,  // 0010 0000
         // ???         = 1 << 6,  // 0100 0000
         // ???         = 1 << 7,  // 1000 0000

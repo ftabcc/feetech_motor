@@ -16,18 +16,22 @@ task(){
             result = process();
 
             '''status.err 중복가능'''
-            
-            if(status.err & crc_err)
+            if(status.err & rx_desync)
                 while(true)
                     // 시작부터 idx전까지 가능한 많이 보내고, 당기기
                     if (idx == 0)
                         break;
+                // status.err &= ~rx_desync;
+            if(status.err & crc_err)
+                '''crc_err가 full보다 우선처리필요.
+                crc_err&idx=0,full이라면 crc_err하고 idx증가후 full처리 필요 '''
                 // 패킷이라 판단했던 바이트 보내기
                 // idx += header_len;
                 // status.err &= ~crc_err;
             if(status.err & full)
                 // 시작부터 idx전까지 가능한 많이 보내고, 당기기
                 // status.err &= ~full;
+            
             if(status.err & timeout)
                 // timeout정보 보내기
                 // idx,found,start,read_av초기화
@@ -38,11 +42,15 @@ task(){
 
             '''status.result 중복불가'''
             if(result = success)
-                if(rxpacket_queue == full)
-                    // 이전 rxpacket 큐 다 비우기
-                // 완성패킷 큐send, 버퍼에 추가 패킷가능. break안함.
+                // 완료된 패킷저장
+                // found, start 초기화;
+                // idx, raed_av 완료된 패킷까지 비우고 당기기
+                if(rxpacket_queue send != True)
+                    // 이전 rxpacket 큐 reset
+                // 완성패킷 큐send 
+                // one_more_buffer_check = true;
             if(result = failure)
-                // 버퍼에 추가 패킷가능. break안함.
+                // one_more_buffer_check = true;
             if(result = pending)
                 // cdc callback의 notify받도록 break
                 break;
@@ -60,10 +68,10 @@ process(){
             // status.err |= cdc_err;
             // break;
         
-        if (read==0 &)
+        if (read==0 && != one_more_check)
+            // one_more_check = false;
             // status.result = pendig;
-            // break;  
-            '''pending으로 바로 빠져도 되나? 버퍼에 미확인데이터 남아있을수있나?'''
+            // break;
         if (read!=0)
             // 버퍼 쓰기
             if (rx_start_time == 0)
@@ -88,15 +96,15 @@ process(){
                 if(len,id,inst 정상)
                     if (data 필드 읽기 가능)
                         if(crc=calculated_crc)
-                            // 완료된 패킷저장
-                            // found, start 초기화;
-                            // idx, raed_av 완료된 패킷까지 비우고 당기기
-                            '''desync트리거를 success와 crc_err에서 발생시켜서 task에서 while로 앞의 확인한 쓰레기 바이트 비워주게하자.
-                            가능하면 success의 rxpacket생성하고 큐 보내는것도 통일성있게 task에서 진행가능?'''
+                            // status.err |= rx_desync;
+                            // status.result = success;
                             break;
                         else:
                             // found = false;
+                            // status.err |= rx_desync;
                             // status.err |= crc_err;
+                            // status.result = failure;
+                            
                 else
                     // found = false;
                     // idx += header_len;

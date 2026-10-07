@@ -5,9 +5,8 @@ task(){
     while(true){
         if(rx_start_time!=0)
             elapsed_time = time - rx_start_time
-            if(elapsed_time > timeout)'''rx_start_time의 생명주기를 아주 명확하게 해야 함'''
+            if(elapsed_time > timeout)
                 // status.err에 timeout추가
-                '''timeout을 if로 process 통과하고 아래에서 처리하게 되면 이전 result보게될수도? 그래서 가능하면 timeout은 따로 여기서 관리하는게 나아보여.'''
             else
                 wait_time = time_out - elapsed_time;
         else
@@ -50,11 +49,18 @@ process(){
         '''읽기 단계. full인경우는 모두 밑에서 잡아내서 break되어 버퍼가 관리되었음.'''
         '''보수적으로 읽기전에 불필요하게라도 버퍼full확인할까?'''
         // 가능한 만큼 cdc_read 
-        if (ret!..)
+        if(ret!=ok)
+            // status.err |= cdc_err;
+            // break;
+        
+        if (read==0)
             // status.result = nmd
-            break;'''바로 break해도돼?'''
+            // break; 
+            '''break전에 timeout봐야해'''
         if (read!=0)
             // 버퍼 쓰기
+            if (rx_start_time != 0)
+                rx_start_time = time;
 
         '''헤더 찾기 단계'''
         if(!found)
@@ -81,18 +87,23 @@ process(){
                         else:
                             // found = false;
                             // idx += header_len;
-                            // status.err에 crc_err추가
+                            // status.err |= crc_err
                 else
                     // found = false
                     // idx += header_len
 
         '''다음 루프전 항상 확인'''
         if(full)
-            // status.err에 full추가
+            // status.err |= full
             break;
-        else
-            // status.result = nmd
+
+        elapsed_time = time - rx_start_time
+        if(elapsed_time > timeout)
+            // status.err |= timeout
+            break;
     }
+    if(elapsed_time > timeout)
+            // status.err |= timeout
     return status;
 }
 

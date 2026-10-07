@@ -63,7 +63,7 @@ namespace pi_protocol
     // COMM_status
     enum class Comm_Result : uint8_t{
         SUCCESS        = 0,
-        NEED_MORE_DATA = 1, // NO DATA
+        WAIT           = 1,
         FAIL           = 2,
     };
     enum Comm_Error : uint8_t{

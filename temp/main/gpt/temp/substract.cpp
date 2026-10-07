@@ -22,24 +22,32 @@ task(){
                 result = process();
 
             '''status.err 중복가능'''
+            
             if(err=crc_err)
-                // 패킷이라 판단했던 바이트는 필수로, 그 이전바이트는 가능한 많이 보내기
-            if(err=buffer_full)
+                while(true)
+                    // 시작부터 idx전까지 가능한 많이 보내고, 당기기
+                    if (idx == 0)
+                        break;
+                // 패킷이라 판단했던 바이트 보내기
+                // idx += header_len;
+            if(err=buffer_full)->err이름을 배출로 바꾸자.
                 // 시작부터 idx전까지 가능한 많이 보내고, 당기기
             if(err=timeout)
                 // timeout정보 보내기
                 // idx,found,start,read_av초기화
             if(err=cdc_err)
-                // 조치미정
+                // usb연결상태 경고보내기.
 
             '''status.result 중복불가'''
             if(result = succes)
                 if(rxpacket_queue == full)
                     // 다비우기? 다른 조치 취하기?
-                // 완성패킷 큐send, 추가로 패킷있을 수도 있어서 break안함.
+                // 완성패킷 큐send, 버퍼에 추가 패킷있을 수도 있어서 break안함.
             if(result = need_more_data)
                 // 위에서 cdc callback의 notify받도록 break
-                break; '''crc_err패킷다음에 연이어 정상패킷있는경우엔 여기서 나가게 되면 notify알람 못받음. break를 err특성에 따라 if로 관리해야함.'''
+                break;
+            if(result = fail)
+                // 버퍼에 추가 패킷있을 수도 있어서 break안함.
         }
     }
 }
@@ -47,7 +55,6 @@ task(){
 process(){
     while(true){
         '''읽기 단계. full인경우는 모두 밑에서 잡아내서 break되어 버퍼가 관리되었음.'''
-        '''보수적으로 읽기전에 불필요하게라도 버퍼full확인할까?'''
         // 가능한 만큼 cdc_read 
         if(ret!=ok)
             // status.err |= cdc_err;
@@ -56,7 +63,6 @@ process(){
         if (read==0)
             // status.result = nmd
             // break; 
-            '''break전에 timeout봐야해'''
         if (read!=0)
             // 버퍼 쓰기
             if (rx_start_time != 0)
@@ -64,14 +70,14 @@ process(){
 
         '''헤더 찾기 단계'''
         if(!found)
-            if(read_avail >= idx + header_len) '''notify로 돌아왔을때 다음 바이트에서 1칸 중복 검색할 수 있음'''
+            if(read_avail >= idx + header_len)
                 whlie(idx <= read_avail - header_len)
                     // 검색
                     if(header check)
                         found = true;
                         break;
                     if(nothing search)
-                        idx = read_avail - header_len;
+                        idx = read_avail - header_len + 1;
                         break;
                     idx+=1;
 
@@ -82,27 +88,28 @@ process(){
                     if (data 필드 읽기 가능)
                         if(crc=calculated_crc)
                             // 완료된 패킷저장
-                            // found, start, idx, raed_av 초기화
+                            // found, start 초기화
+                            // idx, raed_av 완료된 패킷까지 비우고 당기기
                             break;
                         else:
                             // found = false;
-                            // idx += header_len;
-                            // status.err |= crc_err
+                            // status.err |= crc_err;
                 else
                     // found = false
                     // idx += header_len
 
-        '''다음 루프전 항상 확인'''
         if(full)
             // status.err |= full
             break;
 
-        elapsed_time = time - rx_start_time
+        elapsed_time = time - rx_start_time;
         if(elapsed_time > timeout)
             // status.err |= timeout
             break;
     }
-    if(elapsed_time > timeout)
+    if (rx_start_time != 0)       
+        elapsed_time = time - rx_start_time;
+        if(elapsed_time > timeout)
             // status.err |= timeout
     return status;
 }

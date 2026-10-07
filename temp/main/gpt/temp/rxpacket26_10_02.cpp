@@ -90,88 +90,86 @@ void pi_comm::rx_task(void *arg)
         while (true)
         {
             Comm_Result result = self->rx_packet(rxpacket;);
-            
-            if(status.err & pi_protocol::Comm_Error::CRC_ERR){
-                while(true){
-                    // 시작부터 idx전까지 가능한 많이 보내고, 당기기
+            if (status.errors){
+                if(status.err & pi_protocol::Comm_Error::BUFFER_FULL{
+                    while(true){ // 시작부터 idx전까지 가능한 많이 보내고, 당기기
+                        txpacket_t txpacket;
+                        txpacket.data_len = min(idx,pi_protocol::RXPACKET_MAX_LEN);
+                        txpacket.id = debug_packet_id++;
+                        txpacket.inst = ??; //debug
+                        txpacket.err = status.errors;
+                        memcpy(txpacket.data,rx_buffer,txpacket.data_len);
+                        if(xQueueSend(self->rx_queue,&self->rxpacket,0) != pdTRUE){
+                            // TX_QUEUE FULL;
+                        }
+
+                        memmove(rx_buffer,&rx_buffer[txpacket.data_len],read_available - txpacket.data_len);
+                        idx -= txpacket.data_len;
+                        read_available -= txpacket.data_len;
+                        if (idx == 0)
+                            break;
+                    }
+                    status.err &= ~pi_protocol::Comm_Error::BUFFER_FULL;
+                })
+
+                if(status.err & pi_protocol::Comm_Error::CRC_ERR){// 패킷이라 판단했던 바이트 보내기
                     txpacket_t txpacket;
-                    txpacket.data_len = min(idx,pi_protocol::RXPACKET_MAX_LEN);
+                    txpacket.data_len = packet_len;
                     txpacket.id = debug_packet_id++;
                     txpacket.inst = ??; //debug
                     txpacket.err = status.errors;
-                    memcpy(txpacket.data,rx_buffer,txpacket.data_len);
+                    memcpy(txpacket.data,&rx_buffer[idx],txpacket.data_len);
                     if(xQueueSend(self->rx_queue,&self->rxpacket,0) != pdTRUE){
                         // TX_QUEUE FULL;
                     }
 
-                    memmove(rx_buffer,&rx_buffer[txpacket.data_len],read_available - txpacket.data_len);
-                    idx -= txpacket.data_len;
-                    read_available -= txpacket.data_len;
-                    if (idx == 0)
-                        break;
-                // 패킷이라 판단했던 바이트 보내기
-                txpacket_t txpacket;
-                txpacket.data_len = packet_len;
-                txpacket.id = debug_packet_id++;
-                txpacket.inst = ??; //debug
-                txpacket.err = status.errors;
-                memcpy(txpacket.data,&rx_buffer[idx+packet_len-debug_len],txpacket.data_len);
-                if(xQueueSend(self->rx_queue,&self->rxpacket,0) != pdTRUE){
-                    // TX_QUEUE FULL;
+                    idx += header_len;
+                    status.err &= ~pi_protocol::Comm_Error::CRC_ERR;
                 }
 
-                idx += header_len;
-                status.err &= ~pi_protocol::Comm_Error::CRC_ERR;
+                if(status.err & pi_protocol::Comm_Error::RX_TIMEOUT){
+                    txpacket_t txpacket;
+                    txpacket.data_len = 2;
+                    txpacket.id = warning_packet_id++;
+                    txpacket.inst = ??; // timeout warning
+                    txpacket.err = status.errors;
+                    txpacket.data = [??,??];
+                    if(xQueueSend(self->rx_queue,&self->rxpacket,0) != pdTRUE){
+                        // TX_QUEUE FULL;
+                    }
+                    status.err &= ~pi_protocol::Comm_Error::RX_TIMEOUT;
+                }
+
+                if(status.err & pi_protocol::Comm_Error::CDC_ERR){
+                    txpacket_t txpacket;
+                    txpacket.data_len = 2;
+                    txpacket.id = warning_packet_id++;
+                    txpacket.inst = ??; // USB connect warning
+                    txpacket.err = status.errors;
+                    txpacket.data = [??,??];
+                    if(xQueueSend(self->rx_queue,&self->rxpacket,0) != pdTRUE){
+                        // TX_QUEUE FULL;
+                    }
+                    status.err &= ~pi_protocol::Comm_Error::CDC_ERR;
                 }
             }
-
-
-
-
-            
-            switch (result)
+            switch (status.result)
             {
-                case Comm_Result::SUCCESS:
-                    if (xQueueSend(self->rx_queue,&self->rxpacket,0) != pdTRUE)
-                        // RX_QUEUE FULLl, 가장 최근 하나만 남기기.
-                    continue;
-                case Comm_Result::NO_DATA:
-                case Comm_Result::NEED_MORE_DATA:
-                    break;
-                case Comm_Result::CRC_ERR:
-                    break;
-                case Comm_Result::CRC_ERR:
-                    txpacket_t txpacket;
-                    txpacket.data_len = min(idx+packet_len,pi_protocol::RXPACKET_MAX_LEN); // packet_end이전까지 보낼수 있는 최대치
-                    txpacket.id = ;
-                    txpacket.inst = debug;
-                    txpacket.err = CRC_ERR;
-                    memcpy(txpacket.data,&rx_buffer[idx+packet_len-debug_len],txpacket.data_len);
-
-                    if(xQueueSend(self->rx_queue,&self->rxpacket,0) != pdTRUE){
-                        // TX_QUEUE FULL;
+                case pi_protocol::Comm_Result::SUCCESS:
+                    if (xQueueSend(self->rx_queue, &self->rxpacket, 0) != pdTRUE){
+                        xQueueReset(self->rx_queue);
+                        xQueueSend(self->rx_queue, &self->rxpacket, 0);
                     }
-                    break;
-                case Comm_Result::BUFFER_FULL:
-                    txpacket_t txpacket;
-                    txpacket.data_len = min(idx,pi_protocol::RXPACKET_MAX_LEN); 
-                    txpacket.id = ;
-                    txpacket.inst = debug;
-                    txpacket.err = BUFFER_FULL;
-                    memcpy(txpacket.data,rx_buffer,txpacket.data_len);
-
-                    memmove(rx_buffer,rx_buffer + txpacket.data_len,read_available - txpacket.data_len);
-                    read_available -= txpacket.data_len;
-                    idx -= txpacket.data_len;
-
-                    if(xQueueSend(self->rx_queue,&self->rxpacket,0) != pdTRUE){
-                        // TX_QUEUE FULL;
-                    }
+                    continue; // 버퍼에 추가 패킷가능. break안함.
+                case pi_protocol::Comm_Result::FAILURE:
+                    continue; // 버퍼에 추가 패킷가능. break안함.
+                case pi_protocol::Comm_Result::PENDING:
+                    break; // cdc callback의 notify받도록 break
             }
-            break;
         }
     }
 }
+
 pi_protocol::Comm_Result pi_comm::rx_packet(pi_protocol::rxpacket_t &rxpacket)
 {
     if (rx_parse_start_time_us == 0)

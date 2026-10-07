@@ -75,9 +75,15 @@ void pi_comm::rx_task(void *arg)
     while (true)
     {
         TickType_t wait_ticks;
-        if (self->rx_parse_start_time_us != 0){
+        if (self->rx_start_time_us != 0){
             const int64_t elapsed_us = esp_timer_get_time() - self->rx_start_time_us;
-            wait_ticks = pdMS_TO_TICKS(static_cast<uint32_t>((pi_protocol::RX_TIMEOUT_US - elapsed_us; + 999) / 1000));
+
+
+            const int64_t remaining_us = pi_protocol::RX_TIMEOUT_US - elapsed_us;
+            if (remaining_us <= 0)
+                wait_ticks = 0;
+            else:
+                wait_ticks = pdMS_TO_TICKS(static_cast<uint32_t>((pi_protocol::RX_TIMEOUT_US - elapsed_us; + 999) / 1000));
             if (wait_ticks == 0) // Avoid immediate return when tick resolution is coarse.
                 wait_ticks = 1;
         else:
@@ -89,17 +95,19 @@ void pi_comm::rx_task(void *arg)
 
         while (true)
         {
-            Comm_Result result = self->rx_packet(rxpacket;);
+            if(status.err & pi_protocol::Comm_Error::RX_TIMEOUT)
+                Comm_Result result = self->rx_packet(rxpacket;);
             if (status.errors){
                 if(status.err & pi_protocol::Comm_Error::BUFFER_FULL{
                     while(true){ // 시작부터 idx전까지 가능한 많이 보내고, 당기기
+                        '''buffer가 full인데 idx가 0이면 문제생길듯'''
                         txpacket_t txpacket;
                         txpacket.data_len = min(idx,pi_protocol::RXPACKET_MAX_LEN);
                         txpacket.id = debug_packet_id++;
                         txpacket.inst = ??; //debug
                         txpacket.err = status.errors;
                         memcpy(txpacket.data,rx_buffer,txpacket.data_len);
-                        if(xQueueSend(self->rx_queue,&self->rxpacket,0) != pdTRUE){
+                        if(xQueueSend(self->tx_queue,&self->txpacket,0) != pdTRUE){
                             // TX_QUEUE FULL;
                         }
 
@@ -119,7 +127,7 @@ void pi_comm::rx_task(void *arg)
                     txpacket.inst = ??; //debug
                     txpacket.err = status.errors;
                     memcpy(txpacket.data,&rx_buffer[idx],txpacket.data_len);
-                    if(xQueueSend(self->rx_queue,&self->rxpacket,0) != pdTRUE){
+                    if(xQueueSend(self->tx_queue,&self->txpacket,0) != pdTRUE){
                         // TX_QUEUE FULL;
                     }
 
@@ -134,7 +142,7 @@ void pi_comm::rx_task(void *arg)
                     txpacket.inst = ??; // timeout warning
                     txpacket.err = status.errors;
                     txpacket.data = [??,??];
-                    if(xQueueSend(self->rx_queue,&self->rxpacket,0) != pdTRUE){
+                    if(xQueueSend(self->tx_queue,&self->txpacket,0) != pdTRUE){
                         // TX_QUEUE FULL;
                     }
                     status.err &= ~pi_protocol::Comm_Error::RX_TIMEOUT;
@@ -147,7 +155,7 @@ void pi_comm::rx_task(void *arg)
                     txpacket.inst = ??; // USB connect warning
                     txpacket.err = status.errors;
                     txpacket.data = [??,??];
-                    if(xQueueSend(self->rx_queue,&self->rxpacket,0) != pdTRUE){
+                    if(xQueueSend(self->tx_queue,&self->txpacket,0) != pdTRUE){
                         // TX_QUEUE FULL;
                     }
                     status.err &= ~pi_protocol::Comm_Error::CDC_ERR;
@@ -180,11 +188,16 @@ pi_protocol::Comm_Result pi_comm::rx_packet(pi_protocol::rxpacket_t &rxpacket)
             statis.errors |= Comm_Error::CDC_ERR;
             break;
         }
+        if(rx_size !=0)
+            read_available += rx_size;
         if(rx_size == 0 && )
             status.result = pi_protocol::Comm_Result::PENDING;
-            break; '''pending으로 바로 빠져도 되나? 버퍼에 미확인데이터 남아있을수있나?'''
+            break; '''pending으로 바로 빠지면 안된다. 
+            success에서 task로 갔다가 여기로 돌아오면 read가 0인데, 버퍼에 미확인데이터 남아있을수있다.
+            if read_available 확인필요
+            '''
         if (rx_start_time_us == 0)
-            rx_start_time_us = esp_timer_get_time(); '''여기서 시작해도 되나?'''
+            rx_start_time_us = esp_timer_get_time(); '''만약 성공패킷뒤에 패킷일부가 미리 들어와있는상황이라면 패킷성공후 0초로 바꾸면 의미 변질'''
 
             
 
@@ -214,7 +227,7 @@ pi_protocol::Comm_Result pi_comm::rx_packet(pi_protocol::rxpacket_t &rxpacket)
             if(read_available >= idx + header_len + 3){ // len,id,inst 필드 읽기 가능
                 if(rx_buffer[idx + pi_protocol::PKT_LENGTH] <= pi_protocol::RXPACKET_MAX_LEN  &&
                     rx_buffer[idx + pi_protocol::PKT_LENGTH] >= pi_protocol::RXPACKET_MIN_LEN &&
-                    rx_buffer[idx + pi_protocol::PKT_ID] > prev_id &&
+                    rx_buffer[idx + pi_protocol::PKT_ID] > prev_id && '''wrap-around주의'''
                     rx_buffer[idx + pi_protocol::PKT_INSTRUCTION] != ??){// len,id,inst 필드 정상
 
                     const uint16_t packet_len = rx_buffer[idx + pi_protocol::PKT_LENGTH];
@@ -235,11 +248,13 @@ pi_protocol::Comm_Result pi_comm::rx_packet(pi_protocol::rxpacket_t &rxpacket)
                             read_available -= idx + packet_len;
                             idx = 0;
                             found = false;
+                            rx_start_time_us = 0;
                             break;
                         }
                         else:{
                             found = false;
                             status.errors |= pi_protocol::Comm_Error::CRC_ERR;
+                            '''crc err만들고 순수히 crc err만 있으면 계속 내려가고 while로 올라갈수있음'''
                         }
                     }
                 }
@@ -250,18 +265,19 @@ pi_protocol::Comm_Result pi_comm::rx_packet(pi_protocol::rxpacket_t &rxpacket)
             }
         }
 
-        if(read_available == pi_protocol::RXPACKET_MAX_LEN){
+        if(read_available == pi_protocol::rx_buffer_size){
             status.errors |= pi_protocol::Comm_Error::BUFFER_FULL;
             break;
         }
-        if((esp_timer_get_time() - self->rx_start_time_us) > pi_protocol::RX_TIMEOUT_US){
+        if(self->rx_start_time_us != 0 && 
+            (esp_timer_get_time() - self->rx_start_time_us) > pi_protocol::RX_TIMEOUT_US){
             status.erros |= pi_protocol::Comm_Error::RX_TIMEOUT;
             break;
         }
     }
-    if((esp_timer_get_time() - self->rx_start_time_us) > pi_protocol::RX_TIMEOUT_US){
+    if(self->rx_start_time_us != 0 && 
+        (esp_timer_get_time() - self->rx_start_time_us) > pi_protocol::RX_TIMEOUT_US){
         status.erros |= pi_protocol::Comm_Error::RX_TIMEOUT;
-        break;
     }
     return result;
 }

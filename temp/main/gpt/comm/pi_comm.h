@@ -96,7 +96,7 @@ private:
     // TaskHandle_t tx_task_handle = nullptr;
 
     int64_t rx_parse_start_time_us = 0;
-    RingBuffer<uint8_t> rx_buffer{pi_protocol::RXPACKET_MAX_LEN};
+    RingBuffer<uint8_t> rx_buffer{pi_protocol::RXPACKET_MAX_LEN*N};
     RingBuffer<uint8_t> rx_debug_buffer{pi_protocol::RXPACKET_MAX_LEN * 3};
     uint8_t rx_parse_buffer[pi_protocol::RXPACKET_MAX_LEN]{};
     uint8_t rx_parse_len = 0;

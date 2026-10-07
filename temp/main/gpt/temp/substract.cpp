@@ -67,7 +67,7 @@ process(){
         if (read!=0)
             // 버퍼 쓰기
             if (rx_start_time == 0)
-                rx_start_time = time;
+                rx_start_time = time; 
 
         '''헤더 찾기 단계'''
         if(!found)

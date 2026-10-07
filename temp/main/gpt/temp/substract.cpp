@@ -16,16 +16,7 @@ task(){
         while (true){
             if(!(status.err & timeout))
                 result = process();
-
-            '''status.err 중복가능'''
-            if(idx!=0 || full || success || failure) // debug용 바이트스트림 연결시키기.
-                while(true)
-                    // 시작부터 idx전까지 가능한 많이 보내고, 당기기
-                    if (idx == 0)
-                        break;
-                // status.err &= ~rx_desync;
-
-            '''status.result 중복불가'''
+            '''debug스트림보낼때랑 성공,실패용으로 패킷보낼때 차이두고 보내야함.'''
             if(result = success)
                 // 완료된 패킷저장
                 if(rxpacket_queue send != True)
@@ -38,26 +29,25 @@ task(){
 
                 // found, start 초기화;
                 // one_more_buffer_check = true;
-            if(result = failure)
-                if(crc_err)
-                    // 패킷이라 판단했던 바이트 보내기
-
-                    // idx += header_len;
-                    // status.err &= ~crc_err;
-                    // one_more_buffer_check = true;
-                if(full)
-                    // 0~idx전까지 debug용 바이트스트림 연결시키기.
-                if(status.err & timeout)
-                    // timeout정보 보내기
-                    // idx,found,start,read_av초기화
-                    // status.err &= ~timeout;
-                if(status.err & cdc_err)
-                    // usb연결상태 경고보내기.
-                    // status.err &= ~cdc_err;
 
             if(result = pending)
                 // cdc callback의 notify받도록 break
                 break;
+
+            if(crc_err)
+                // 패킷이라 판단했던 바이트 보내기
+                // idx += header_len;
+                // status.err &= ~crc_err;
+                // one_more_buffer_check = true;
+            if(full)
+                // 0~idx전까지 debug용 바이트스트림 연결시키기.
+            if(status.err & timeout)
+                // timeout정보 보내기
+                // idx,found,start,read_av초기화
+                // status.err &= ~timeout;
+            if(status.err & cdc_err)
+                // usb연결상태 경고보내기.
+                // status.err &= ~cdc_err;
         }
     }
 }
@@ -70,7 +60,7 @@ process(){
             // status.err |= cdc_err;
             // break;
         
-        if (read==0 && != one_more_check)
+        if (read==0 && !one_more_check)
             // one_more_check = false;
             // status.result = pendig;
             // break;

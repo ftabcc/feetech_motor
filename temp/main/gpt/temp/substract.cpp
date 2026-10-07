@@ -1,5 +1,3 @@
-'''나중에 cdc_read를 task안에서 해볼까?'''안될것같은데.
-
 //26-10-06
 task(){
     while(true){
@@ -62,7 +60,7 @@ process(){
             // status.err |= cdc_err;
             // break;
         
-        if (read==0)
+        if (read==0 &)
             // status.result = pendig;
             // break;  
             '''pending으로 바로 빠져도 되나? 버퍼에 미확인데이터 남아있을수있나?'''

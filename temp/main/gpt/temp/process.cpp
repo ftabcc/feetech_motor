@@ -14,7 +14,7 @@ process(){
                 if (rx_start_time ==0)
                     rx_start_time = time;
                 if(read_avail >= idx + header_len)
-                    whlie(idx <= read_avail - header_len)
+                    whlie(idx <= read_avail - header_len){
                         search;
                         if(header check)
                             found = true;
@@ -23,6 +23,7 @@ process(){
                             idx = read_avail - header_len + 1;
                             break;
                         idx+=1;
+                    }
             }
             
             if(found){
@@ -44,9 +45,8 @@ process(){
         
         if(read_av == rx_buffer_size)
             // status.err |= full
-        if(time - rx_start_time > timeout)
+        if(rx_start_time != 0 && time - rx_start_time > timeout)
             // status.err |= timeout
-
         if(stuts.result != pending || status.err != 0)
             break;
     }

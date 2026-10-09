@@ -183,7 +183,7 @@ pi_protocol::Comm_Result pi_comm::rx_packet(pi_protocol::rxpacket_t &rxpacket)
         std::size_t rx_size = 0;
         const esp_err_t ret = tinyusb_cdcacm_read(itf, &rx_buffer[read_available], rx_buffer_size - read_available, &rx_size);
         if (ret != ESP_OK){
-            statis.errors |= Comm_Error::CDC_ERR;
+            statis.errors |= pi_protocol::Comm_Error::CDC_ERR;
             break;
         }
         if(rx_size !=0)
@@ -213,12 +213,12 @@ pi_protocol::Comm_Result pi_comm::rx_packet(pi_protocol::rxpacket_t &rxpacket)
                             found = true;
                             break;
                         }
-                        idx += 1;
                     }
                     else{// 남은 구간에 0xFF 없으므로 더 볼 필요 없음
                         idx = read_available - header_len + 1;
                         break;
                     }
+                    idx += 1;
                 }
             }
         }

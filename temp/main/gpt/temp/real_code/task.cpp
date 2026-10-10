@@ -81,7 +81,8 @@ void pi_comm::rx_task(void *arg){
                 status.err &= ~pi_protocol::Comm_Error::BUFFER_FULL;
                 
             if(status.err != 0)
-                if(status.err & timeout)
+                if(status.err & timeout) '''타임아웃을 굳이 칼같이 해야하나? 
+                확인할 바이트가 더이상없고, 마지막바이트 기준 시간이 많이 지나면 타임아웃하도록 변경하자.'''
                     
                     txpacket_t txpacket;
                     txpacket.data_len = 2;

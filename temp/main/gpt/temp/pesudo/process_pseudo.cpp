@@ -7,9 +7,16 @@ process(){
                 (found && !confirm && read_av >= idx + PKT_INST) || // found일때 len,id,inst 필드 읽기 가능?
                 (confirm && read_av >= idx + packet_len); // confirm일때 packet 전체 읽기 가능?
         if(read == 0 && !ready)
-            // status.result = pendig;
+            // status.result = pending;
         if (read != 0 && rx_start_time ==0)
             rx_start_time = time;
+        =====
+        if(read == 0 && !ready && rx_start_time == 0) '''더이상 확인필요x'''
+            rx_start_time = time;
+            status.result = pending;
+        if(read !=0 && rx_start_time != 0)
+            rx_start_time = 0;
+        =====
 
         if (ready){
             if(!found){

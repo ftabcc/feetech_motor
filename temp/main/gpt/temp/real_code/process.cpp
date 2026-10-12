@@ -2,20 +2,24 @@ process(){
     while(true){
         std::size_t rx_size = 0;
         const esp_err_t ret = tinyusb_cdcacm_read(itf, &rx_buffer[read_available], rx_buffer_size - read_available, &rx_size);
+        '''for safe extra iteration, dont clear notify-value.'''
         if (ret != ESP_OK){
             statis.errors |= pi_protocol::Comm_Error::CDC_ERR;
             break;
         }
-        bool ready = (!found &&  read_av >= idx + header_len) || // !found일때 header 읽기 가능?
-                (found && !confirm && read_av >= idx + PKT_INST) || // found일때 len,id,inst 필드 읽기 가능?
-                (confirm && read_av >= idx + packet_len); // confirm일때 packet 전체 읽기 가능?
-        
-        if(rx_size != 0)
+        if(rx_size != 0){
             read_available += rx_size;
-            if (rx_start_time ==0)
-                rx_start_time = time;
-        if(rx_size == 0 && !ready)
+            rx_start_time_us = 0;
+        }
+
+        bool ready = (!found &&  read_av >= idx + header_len) || // !found일때 header 읽기 가능?
+                (found && !confirm && read_av >= idx + header_len + 3) || // found일때 len,id,inst 필드 읽기 가능?
+                (confirm && read_av >= idx + rx_buffer[idx + pi_protocol::PKT_LENGTH]); // confirm일때 packet 전체 읽기 가능?
+        
+        if(rx_size == 0 && !ready && rx_start_time_us == 0){
+            rx_start_time_us = esp_timer_get_time();
             status.result = pi_protocol::Comm_Result::PENDING;
+        }
 
         if (ready){
             if(!found){
@@ -45,7 +49,7 @@ process(){
                     rx_buffer[idx + pi_protocol::PKT_ID] > prev_id && '''wrap-around주의'''
                     rx_buffer[idx + pi_protocol::PKT_INSTRUCTION] != ??){// len,id,inst 필드 정상
                         confirm = true;
-                        const uint16_t packet_len = rx_buffer[idx + pi_protocol::PKT_LENGTH];
+                        packet_len = rx_buffer[idx + pi_protocol::PKT_LENGTH];
                         if(read_available >= idx + packet_len){ // data 읽기 가능
                             // CRC(little endian L,H)
                             uint16_t crc = static_cast<uint16_t>(rx_buffer[idx + packet_len-2]) | // L byte
@@ -58,12 +62,9 @@ process(){
                                 memcpy(rxpacket.data,&rx_buffer[idx+pi_protocol::PKT_DATA],rxpacket.data_len);
                                 result = unstuffing(rxpacket.data, &rxpacket.data_len);
 
-                                // prepare for next
-                                memmove(rx_buffer,rx_buffer + idx + packet_len,read_available - (idx + packet_len));
-                                read_available -= idx + packet_len;
-                                idx = 0;
+                                memmove(&rx_buffer[idx],rx_buffer + idx + packet_len,read_available - (idx + packet_len));
+                                read_available -= packet_len;
                                 found = false;
-                                rx_start_time_us = 0;
                                 
                                 status.result |= pi_protocol::Comm_Result::SUCCESS; 
                             }
@@ -86,9 +87,6 @@ process(){
             
         if(read_available == pi_protocol::rx_buffer_size){
             status.errors |= pi_protocol::Comm_Error::BUFFER_FULL;
-        }
-        if(rx_start_time_us != 0 && (esp_timer_get_time() - rx_start_time_us) > pi_protocol::RX_TIMEOUT_US){
-            status.erros |= pi_protocol::Comm_Error::RX_TIMEOUT;
         }
         if(stuts.result != Null || status.err != 0)
             break;

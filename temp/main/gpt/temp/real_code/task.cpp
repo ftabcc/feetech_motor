@@ -7,10 +7,11 @@ void pi_comm::rx_task(void *arg){
             const int64_t elapsed_us = esp_timer_get_time() - self->rx_start_time_us;
             if (elapsed_us > pi_protocol::RX_TIMEOUT_US)
                 status.err |= pi_protocol::Comm_err::RX_TIMEOUT;
-            else
+            else{
                 wait_ticks = pdMS_TO_TICKS(static_cast<uint32_t>((pi_protocol::RX_TIMEOUT_US - elapsed_us + 999) / 1000));
                 if (wait_ticks == 0) // Avoid immediate return when tick resolution is coarse.
                     wait_ticks = 1;
+                }
         }
         else
             wait_ticks = portMAX_DELAY;
@@ -22,9 +23,10 @@ void pi_comm::rx_task(void *arg){
         }
         while (true){
             if(!(status.err & pi_protocol::Comm_err::RX_TIMEOUT))
-                Comm_Result result = self->rx_packet(rxpacket;);
+                pi_protocol::Comm_Result result = self->rx_packet(rxpacket;);
+                '''result,err,status 나눠서 의미부여.'''
 
-            if(result = success)
+            if(result == pi_protocol::Comm_Result::SUCCESS)
                 // 완료된 패킷저장 -> process에서 해도될듯?
                 if (xQueueSend(self->rx_queue, &self->rxpacket, 0) != pdTRUE){
                     xQueueReset(self->rx_queue);
@@ -44,6 +46,7 @@ void pi_comm::rx_task(void *arg){
                     memcpy(txpacket.data,rx_buffer + sent_bytes,txpacket.data_len);
                     if (xQueueSend(self->tx_queue, &txpacket, 0) != pdTRUE){
                         // break; TX_QUEUE_FULL: preserve unsent bytes
+                        '''실패시 구체화 필요. '''
                     }
                     sent_bytes += txpacket.data_len;
                     debug_packet_id++;
@@ -54,7 +57,7 @@ void pi_comm::rx_task(void *arg){
                     read_available -= sent_bytes;
                 }
 
-            if(result = failure) // crc_err
+            if(result == pi_protocol::Comm_Result::FAILURE) // crc_err
                 txpacket_t txpacket;
                 txpacket.data_len = packet_len;
                 txpacket.id = debug_packet_id++;
@@ -68,7 +71,7 @@ void pi_comm::rx_task(void *arg){
                 idx += header_len;
                 status.err &= ~pi_protocol::Comm_Error::CRC_ERR;
 
-            if(status.err & full)
+            if(status.err & pi_protocol::Comm_err::BUFFER_FULL)
                 txpacket_t txpacket;
                 txpacket.data_len = std::min(idx,sizeof(txpacket.data));
                 txpacket.id = debug_packet_id++;
@@ -78,12 +81,13 @@ void pi_comm::rx_task(void *arg){
                 if(xQueueSend(self->tx_queue,&self->txpacket,0) != pdTRUE){
                     // break; TX_QUEUE_FULL: preserve unsent bytes
                 }
+
+                idx -= txpacket.data_len;
+                read_available -= txpacket.data_len;
                 status.err &= ~pi_protocol::Comm_Error::BUFFER_FULL;
                 
-            if(status.err != 0)
-                if(status.err & timeout) '''타임아웃을 굳이 칼같이 해야하나? 
-                확인할 바이트가 더이상없고, 마지막바이트 기준 시간이 많이 지나면 타임아웃하도록 변경하자.'''
-                    
+            if(status.err != 0) '''즉시 복구 가능. 그냥 미리 패킷만들어서 바로 보내자.'''
+                if(status.err & pi_protocol::Comm_err::RX_TIMEOUT){
                     txpacket_t txpacket;
                     txpacket.data_len = 2;
                     txpacket.id = warning_packet_id++;
@@ -94,14 +98,15 @@ void pi_comm::rx_task(void *arg){
                         // break; TX_QUEUE_FULL: preserve unsent bytes
                     }
                     // idx,found,confirm,start,read_av초기화
-                    idx = 0;
-                    found = false;
-                    confirm = false;
-                    rx_start_time_us = 0;
-                    read_available = 0;
+                    // idx = 0;
+                    // found = false;
+                    // confirm = false;
+                    // rx_start_time_us = 0;
+                    // read_available = 0;
                     status.err &= ~pi_protocol::Comm_Error::RX_TIMEOUT;
+                }
 
-                if(status.err & cdc_err)
+                if(status.err & pi_protocol::Comm_Error::CDC_ERR)
                     txpacket_t txpacket;
                     txpacket.data_len = 2;
                     txpacket.id = warning_packet_id++;
@@ -113,7 +118,7 @@ void pi_comm::rx_task(void *arg){
                     }
                     status.err &= ~pi_protocol::Comm_Error::CDC_ERR;
             
-            if(result = pending ||'''에러일때 break해야하는데''')
+            if(result == pi_protocol::Comm_Result::PENDING ||'''에러일때 break해야하는데''')
                 break; // cdc callback의 notify받도록 break
         }
     }

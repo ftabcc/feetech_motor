@@ -6,17 +6,12 @@ process(){
         ready = (!found &&  read_av >= idx + header_len) || // !found일때 header 읽기 가능?
                 (found && !confirm && read_av >= idx + PKT_INST) || // found일때 len,id,inst 필드 읽기 가능?
                 (confirm && read_av >= idx + packet_len); // confirm일때 packet 전체 읽기 가능?
-        if(read == 0 && !ready)
-            // status.result = pending;
-        if (read != 0 && rx_start_time ==0)
-            rx_start_time = time;
-        =====
-        if(read == 0 && !ready && rx_start_time == 0) '''더이상 확인필요x'''
+        
+        if(read == 0 && !ready && rx_start_time == 0) 
             rx_start_time = time;
             status.result = pending;
         if(read !=0 && rx_start_time != 0)
             rx_start_time = 0;
-        =====
 
         if (ready){
             if(!found){
@@ -58,8 +53,6 @@ process(){
             
         if(read_av == rx_buffer_size)
             // status.err |= full
-        if(rx_start_time != 0 && time - rx_start_time > timeout)
-            // status.err |= timeout
         if(stuts.result != Null || status.err != 0)
             break;
     }

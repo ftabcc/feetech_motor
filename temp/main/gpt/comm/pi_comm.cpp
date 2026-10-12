@@ -59,6 +59,11 @@ void pi_comm::rx_callback(int itf, cdcacm_event_t *event)
     xTaskNotifyGive(rx_task_handle);
 }
 
+'''
+10-13일 이후 확인할것들.
+1. succes이후 timeout어떻게 되는지.
+2. timeout에서 task의 while나가도 되는지.
+'''
 void pi_comm::rx_task(void *arg){
     pi_comm *self = static_cast<pi_comm *>(arg);
     pi_protocol::rxpacket_t rxpacket;
@@ -66,7 +71,7 @@ void pi_comm::rx_task(void *arg){
         TickType_t wait_ticks;
         if(self->rx_start_time_us != 0){
             const int64_t elapsed_us = esp_timer_get_time() - self->rx_start_time_us;
-            if (elapsed_us > pi_protocol::RX_TIMEOUT_US)
+            if (elapsed_us > pi_protocol::RX_TIMEOUT_US && self->idx != 0)
                 status.errors |= pi_protocol::Comm_err::RX_TIMEOUT;
             else{
                 wait_ticks = pdMS_TO_TICKS(static_cast<uint32_t>((pi_protocol::RX_TIMEOUT_US - elapsed_us + 999) / 1000));
@@ -79,7 +84,7 @@ void pi_comm::rx_task(void *arg){
 
         if(!(status.errors & pi_protocol::Comm_err::RX_TIMEOUT)){
             BaseType_t notified = xTaskNotifyWait(0,0xFFFFFFFF,&notify_value,wait_ticks);
-            if (notified == pdFALSE && self->rx_start_time_us != 0) // 읽던 바이트가 있을때
+            if (notified == pdFALSE && self->idx != 0) // 읽던 바이트가 있을때
                 status.errors |= pi_protocol::Comm_err::RX_TIMEOUT;
         }
         while (true){
@@ -151,10 +156,14 @@ void pi_comm::rx_task(void *arg){
                     idx -= sent_bytes;
                     read_available -= sent_bytes;
                 }
+                status.err &= ~pi_protocol::Comm_Error::BUFFER_FULL;
             }
                 
-            if(result == pi_protocol::Comm_Result::PENDING || status.errors != 0)
+            if(result == pi_protocol::Comm_Result::PENDING || status.err & pi_protocol::Comm_Error::RX_TIMEOUT){
+                status.err &= ~pi_protocol::Comm_Error::RX_TIMEOUT;
+                self->rx_start_time_us = 0;
                 break; // cdc callback의 notify받도록 break
+            }
         }
     }
 }

@@ -113,13 +113,10 @@ void pi_comm::rx_task(void *arg){
                 status.err &= ~pi_protocol::Comm_Error::CDC_ERR;
             }
             if(result == pi_protocol::Comm_Result::SUCCESS){
-                // 완료된 패킷저장 -> process에서 해도될듯?
                 if (xQueueSend(self->rx_queue, &self->rxpacket, 0) != pdTRUE){
                     xQueueReset(self->rx_queue);
                     xQueueSend(self->rx_queue, &self->rxpacket, 0);
                 }
-                // idx, read_av 완료된 패킷만 비우고 당기기 -> process에서 해도될듯?
-
                 size_t sent_bytes = 0;
                 while (sent_bytes < idx) // 0~idx전까지 debug용 바이트스트림 연결시키기.
                 {

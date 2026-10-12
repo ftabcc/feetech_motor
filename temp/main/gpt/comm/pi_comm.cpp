@@ -67,7 +67,7 @@ void pi_comm::rx_task(void *arg){
         if(self->rx_start_time_us != 0){
             const int64_t elapsed_us = esp_timer_get_time() - self->rx_start_time_us;
             if (elapsed_us > pi_protocol::RX_TIMEOUT_US)
-                status.err |= pi_protocol::Comm_err::RX_TIMEOUT;
+                status.errors |= pi_protocol::Comm_err::RX_TIMEOUT;
             else{
                 wait_ticks = pdMS_TO_TICKS(static_cast<uint32_t>((pi_protocol::RX_TIMEOUT_US - elapsed_us + 999) / 1000));
                 if (wait_ticks == 0) // Avoid immediate return when tick resolution is coarse.
@@ -77,101 +77,83 @@ void pi_comm::rx_task(void *arg){
         else
             wait_ticks = portMAX_DELAY;
 
-        if(!(status.err & pi_protocol::Comm_err::RX_TIMEOUT)){
+        if(!(status.errors & pi_protocol::Comm_err::RX_TIMEOUT)){
             BaseType_t notified = xTaskNotifyWait(0,0xFFFFFFFF,&notify_value,wait_ticks);
-            if (notified == pdFALSE && self->rx_start_time_us != 0)
-                // status.err |= timeout;
+            if (notified == pdFALSE && self->rx_start_time_us != 0) // 읽던 바이트가 있을때
+                status.errors |= pi_protocol::Comm_err::RX_TIMEOUT;
         }
         while (true){
-            if(!(status.err & pi_protocol::Comm_err::RX_TIMEOUT))
-                pi_protocol::Comm_Result result = self->rx_packet(rxpacket;);'''result,err,status 나눠서 의미부여.'''
-            else if(status.err & pi_protocol::Comm_err::RX_TIMEOUT){
-                if(self->idx != 0)
-                    txpacket_t txpacket;
-                    txpacket.data_len = 2;
-                    txpacket.id = warning_packet_id++;
-                    txpacket.inst = ??; // timeout warning
-                    txpacket.err = status.errors;
-                    txpacket.data = [??,??];
-                    if(xQueueSend(self->tx_queue,&self->txpacket,0) != pdTRUE){
-                        // break; TX_QUEUE_FULL: preserve unsent bytes
-                    }
-                    // reset: idx,found,confirm,start,read_av
-                    status.err &= ~pi_protocol::Comm_Error::RX_TIMEOUT;
-                }
+            if(!(status.errors & pi_protocol::Comm_err::RX_TIMEOUT))
+                status = self->rx_packet(rxpacket;);
 
-            if(status.err & pi_protocol::Comm_Error::CDC_ERR){
+            if(status.errors & pi_protocol::Comm_Error::CDC_ERR){
                 txpacket_t txpacket;
-                txpacket.data_len = 2;
+                const char *err_name = esp_err_to_name(ret);
+                txpacket.data_len = std::min(strlen(err_name), sizeof(txpacket.data) - 1);
                 txpacket.id = warning_packet_id++;
                 txpacket.inst = ??; // USB connect warning
                 txpacket.err = status.errors;
-                txpacket.data = [??,??];
-                if(xQueueSend(self->tx_queue,&self->txpacket,0) != pdTRUE){
-                    // break; TX_QUEUE_FULL: preserve unsent bytes
-                }
+                memcpy(txpacket.data, err_name, len);
+                if (xQueueSend(self->tx_queue, &txpacket, 0) != pdTRUE){
+                        xQueueReset(self->tx_queue);
+                        xQueueSend(self->tx_queue, &self->txpacket, 0);
+                    }
                 status.err &= ~pi_protocol::Comm_Error::CDC_ERR;
             }
-            if(result == pi_protocol::Comm_Result::SUCCESS){
+
+            if(status.result == pi_protocol::Comm_Result::SUCCESS){
+                // 보낼 rxpacket 완성하기
+                uint8_t packet_len = rx_buffer[idx + pi_protocol::PKT_LENGTH];
+                rxpacket.data_len = packet_len - 9; // rxpacket_len = DATA(N) + 9 
+                rxpacket.id = rx_buffer[idx + pi_protocol::PKT_ID];
+                rxpacket.inst = rx_buffer[idx + pi_protocol::PKT_INSTRUCTION];
+                memcpy(rxpacket.data,&rx_buffer[idx+pi_protocol::PKT_DATA],rxpacket.data_len);
+                unstuffing(rxpacket.data, &rxpacket.data_len);
+                // 완성된 packet빼고 buffer당기기
+                memmove(&rx_buffer[idx],rx_buffer + idx + packet_len,read_available - (idx + packet_len));
+                read_available -= packet_len;
+                // 패킷 보내기
                 if (xQueueSend(self->rx_queue, &self->rxpacket, 0) != pdTRUE){
                     xQueueReset(self->rx_queue);
                     xQueueSend(self->rx_queue, &self->rxpacket, 0);
                 }
+            }
+            if(status.result == pi_protocol::Comm_Result::FAILURE){
+                idx += header_len;
+            }
+            
+            // connect byte debug stream. timeout: [0,all], full & success: [0,idx)
+            if(status.errors != 0 || status.result == pi_protocol::Comm_Result::SUCCESS ||){
                 size_t sent_bytes = 0;
-                while (sent_bytes < idx) // 0~idx전까지 debug용 바이트스트림 연결시키기.
+                size_t untill = (status.errors & pi_protocol::Comm_err::RX_TIMEOUT ? read_available : idx);
+                while (sent_bytes < untill)
                 {
                     txpacket_t txpacket{};
-                    txpacket.data_len = std::min(debug_len - sent_bytes,sizeof(txpacket.data));
+                    txpacket.data_len = std::min(untill - sent_bytes,sizeof(txpacket.data));
                     txpacket.id = debug_packet_id;
                     txpacket.inst = /* debug */;
                     txpacket.err = self->status.errors;
 
                     memcpy(txpacket.data,rx_buffer + sent_bytes,txpacket.data_len);
                     if (xQueueSend(self->tx_queue, &txpacket, 0) != pdTRUE){
-                        // break; TX_QUEUE_FULL: preserve unsent bytes
-                        '''실패시 구체화 필요. '''
+                        xQueueReset(self->tx_queue);
+                        xQueueSend(self->tx_queue, &self->txpacket, 0);
                     }
                     sent_bytes += txpacket.data_len;
                     debug_packet_id++;
                 }
+                
+                if(result == success) // 다음부터는 byte stream이 의미적으로 연결안됨.
+                    debug_packet_id = 0;
+                
                 if (sent_bytes > 0){
                     memmove(rx_buffer,rx_buffer + sent_bytes,read_available - sent_bytes);
                     idx -= sent_bytes;
                     read_available -= sent_bytes;
                 }
             }
-            if(result == pi_protocol::Comm_Result::FAILURE){ // crc_err
-                txpacket_t txpacket;
-                txpacket.data_len = packet_len;
-                txpacket.id = debug_packet_id++;
-                txpacket.inst = ??; //debug
-                txpacket.err = status.errors;
-                memcpy(txpacket.data,&rx_buffer[idx],txpacket.data_len);
-                if(xQueueSend(self->tx_queue,&self->txpacket,0) != pdTRUE){
-                    // break; TX_QUEUE_FULL: preserve unsent bytes
-                }
-
-                idx += header_len;
-                status.err &= ~pi_protocol::Comm_Error::CRC_ERR;
-            }
-            
-            if(read_available == pi_protocol::rx_buffer_size)
-                txpacket_t txpacket;
-                txpacket.data_len = std::min(idx,sizeof(txpacket.data));
-                txpacket.id = debug_packet_id++;
-                txpacket.inst = ??; //debug
-                txpacket.err = status.errors;
-                memcpy(txpacket.data,rx_buffer,txpacket.data_len);
-                if(xQueueSend(self->tx_queue,&self->txpacket,0) != pdTRUE){
-                    // break; TX_QUEUE_FULL: preserve unsent bytes
-                }
-
-                idx -= txpacket.data_len;
-                read_available -= txpacket.data_len;
-                status.err &= ~pi_protocol::Comm_Error::BUFFER_FULL;
                 
-            
-            if(result == pi_protocol::Comm_Result::PENDING ||'''에러일때 break해야하는데''')
+            if(result == pi_protocol::Comm_Result::PENDING || status.errors != 0)
                 break; // cdc callback의 notify받도록 break
         }
     }
@@ -196,9 +178,10 @@ pi_protocol::Comm_Result pi_comm::rx_packet(pi_protocol::rxpacket_t &rxpacket)
                 (found && !confirm && read_av >= idx + header_len + 3) || // found일때 len,id,inst 필드 읽기 가능?
                 (confirm && read_av >= idx + rx_buffer[idx + pi_protocol::PKT_LENGTH]); // confirm일때 packet 전체 읽기 가능?
         
-        if(rx_size == 0 && !ready && rx_start_time_us == 0){
-            rx_start_time_us = esp_timer_get_time();
+        if(rx_size == 0 && !ready){
             status.result = pi_protocol::Comm_Result::PENDING;
+            if(rx_start_time_us == 0)
+                rx_start_time_us = esp_timer_get_time();
         }
 
         if (ready){
@@ -236,20 +219,10 @@ pi_protocol::Comm_Result pi_comm::rx_packet(pi_protocol::rxpacket_t &rxpacket)
                                             (static_cast<uint16_t>(rx_buffer[idx + packet_len-1]) << 8); // H byte
                             uint16_t calculated_crc = updateCRC(0, &rx_buffer[idx], packet_len-2); //without crc 2 byte
                             if(crc == calculated_crc){// (FF FF FD 00 LEN ID INST DATA CRC_L CRC_H)
-                                rxpacket.data_len = packet_len - 9; // rxpacket_len = DATA(N) + 9 
-                                rxpacket.id = rx_buffer[idx + pi_protocol::PKT_ID];
-                                rxpacket.inst = rx_buffer[idx + pi_protocol::PKT_INSTRUCTION];
-                                memcpy(rxpacket.data,&rx_buffer[idx+pi_protocol::PKT_DATA],rxpacket.data_len);
-                                result = unstuffing(rxpacket.data, &rxpacket.data_len);
-
-                                memmove(&rx_buffer[idx],rx_buffer + idx + packet_len,read_available - (idx + packet_len));
-                                read_available -= packet_len;
-                                found = false;
-                                
-                                status.result |= pi_protocol::Comm_Result::SUCCESS; 
+                                status.result = pi_protocol::Comm_Result::SUCCESS; 
                             }
                             else:{
-                                status.result |= pi_protocol::Comm_Result::FAILURE;
+                                status.result = pi_protocol::Comm_Result::FAILURE;
                             }
                             found = false;
                             confirm = false;

@@ -59,240 +59,222 @@ void pi_comm::rx_callback(int itf, cdcacm_event_t *event)
     xTaskNotifyGive(rx_task_handle);
 }
 
-void pi_comm::rx_task(void *arg)
-{
+void pi_comm::rx_task(void *arg){
     pi_comm *self = static_cast<pi_comm *>(arg);
     pi_protocol::rxpacket_t rxpacket;
-    constexpr int64_t RX_TIMEOUT_US = static_cast<int64_t>(RX_TIMEOUT_MS) * 1000;
-
-    while (true)
-    {
-        TickType_t wait_ticks = portMAX_DELAY;
-
-        // A packet is currently being assembled.
-        if (self->rx_parse_start_time_us != 0)
-        {
-            const int64_t elapsed_us = esp_timer_get_time() - self->rx_parse_start_time_us;
-            if (elapsed_us >= RX_TIMEOUT_US)
-            {
-                self->rx_parse_length = 0;
-                self->rx_packet_len = 0;
-                self->rx_parse_start_time_us = 0;
-                self->rx_debug_buffer.clear();
-
-                // RX timeout 처리
-                self->tx_packet();
-
-                continue;
-            }
-
-            const int64_t remaining_us = RX_TIMEOUT_US - elapsed_us;
-            uint32_t remaining_ms = static_cast<uint32_t>((remaining_us + 999) / 1000);
-            wait_ticks = pdMS_TO_TICKS(remaining_ms);
-
-            if (wait_ticks == 0) // Avoid immediate return when tick resolution is coarse.
-            {wait_ticks = 1;}
+    while(true){
+        TickType_t wait_ticks;
+        if(self->rx_start_time_us != 0){
+            const int64_t elapsed_us = esp_timer_get_time() - self->rx_start_time_us;
+            if (elapsed_us > pi_protocol::RX_TIMEOUT_US)
+                status.err |= pi_protocol::Comm_err::RX_TIMEOUT;
+            else{
+                wait_ticks = pdMS_TO_TICKS(static_cast<uint32_t>((pi_protocol::RX_TIMEOUT_US - elapsed_us + 999) / 1000));
+                if (wait_ticks == 0) // Avoid immediate return when tick resolution is coarse.
+                    wait_ticks = 1;
+                }
         }
+        else
+            wait_ticks = portMAX_DELAY;
 
-        const uint32_t notify_count = ulTaskNotifyTake(pdTRUE, wait_ticks);
-
-        // No notification before the packet deadline.
-        if (notify_count == 0)
-        {
-            if (self->rx_parse_start_time_us != 0)
-            {
-                self->rx_parse_length = 0;
-                self->rx_packet_len = 0;
-                self->rx_parse_start_time_us = 0;
-                self->rx_debug_buffer.clear();
-
-                // RX timeout 처리
-                self->tx_packet();
-            }
-            continue;
+        if(!(status.err & pi_protocol::Comm_err::RX_TIMEOUT)){
+            BaseType_t notified = xTaskNotifyWait(0,0xFFFFFFFF,&notify_value,wait_ticks);
+            if (notified == pdFALSE && self->rx_start_time_us != 0)
+                // status.err |= timeout;
         }
+        while (true){
+            if(!(status.err & pi_protocol::Comm_err::RX_TIMEOUT))
+                pi_protocol::Comm_Result result = self->rx_packet(rxpacket;);'''result,err,status 나눠서 의미부여.'''
+            else if(status.err & pi_protocol::Comm_err::RX_TIMEOUT){
+                if(self->idx != 0)
+                    txpacket_t txpacket;
+                    txpacket.data_len = 2;
+                    txpacket.id = warning_packet_id++;
+                    txpacket.inst = ??; // timeout warning
+                    txpacket.err = status.errors;
+                    txpacket.data = [??,??];
+                    if(xQueueSend(self->tx_queue,&self->txpacket,0) != pdTRUE){
+                        // break; TX_QUEUE_FULL: preserve unsent bytes
+                    }
+                    // reset: idx,found,confirm,start,read_av
+                    status.err &= ~pi_protocol::Comm_Error::RX_TIMEOUT;
+                }
 
-        while (self->rx_buffer.available() > 0)
-        {
-            Comm_Result result = self->rx_packet(rxpacket;);
-            if (result == Comm_Result::NEED_MORE_DATA)
-            {break;}
-            if (result == Comm_Result::SUCCESS)
-            {
-                self->rx_debug_buffer.clear()
-                if (xQueueSend(self->rx_queue,&self->rxpacket,0) != pdTRUE) // (,,꽉 차면 대기할 시간)
+            if(status.err & pi_protocol::Comm_Error::CDC_ERR){
+                txpacket_t txpacket;
+                txpacket.data_len = 2;
+                txpacket.id = warning_packet_id++;
+                txpacket.inst = ??; // USB connect warning
+                txpacket.err = status.errors;
+                txpacket.data = [??,??];
+                if(xQueueSend(self->tx_queue,&self->txpacket,0) != pdTRUE){
+                    // break; TX_QUEUE_FULL: preserve unsent bytes
+                }
+                status.err &= ~pi_protocol::Comm_Error::CDC_ERR;
+            }
+            if(result == pi_protocol::Comm_Result::SUCCESS){
+                // 완료된 패킷저장 -> process에서 해도될듯?
+                if (xQueueSend(self->rx_queue, &self->rxpacket, 0) != pdTRUE){
+                    xQueueReset(self->rx_queue);
+                    xQueueSend(self->rx_queue, &self->rxpacket, 0);
+                }
+                // idx, read_av 완료된 패킷만 비우고 당기기 -> process에서 해도될듯?
+
+                size_t sent_bytes = 0;
+                while (sent_bytes < idx) // 0~idx전까지 debug용 바이트스트림 연결시키기.
                 {
-                    // RX packet queue full
+                    txpacket_t txpacket{};
+                    txpacket.data_len = std::min(debug_len - sent_bytes,sizeof(txpacket.data));
+                    txpacket.id = debug_packet_id;
+                    txpacket.inst = /* debug */;
+                    txpacket.err = self->status.errors;
+
+                    memcpy(txpacket.data,rx_buffer + sent_bytes,txpacket.data_len);
+                    if (xQueueSend(self->tx_queue, &txpacket, 0) != pdTRUE){
+                        // break; TX_QUEUE_FULL: preserve unsent bytes
+                        '''실패시 구체화 필요. '''
+                    }
+                    sent_bytes += txpacket.data_len;
+                    debug_packet_id++;
+                }
+                if (sent_bytes > 0){
+                    memmove(rx_buffer,rx_buffer + sent_bytes,read_available - sent_bytes);
+                    idx -= sent_bytes;
+                    read_available -= sent_bytes;
                 }
             }
-            else // Comm_Result
-            {
-                self->tx_packet();
+            if(result == pi_protocol::Comm_Result::FAILURE){ // crc_err
+                txpacket_t txpacket;
+                txpacket.data_len = packet_len;
+                txpacket.id = debug_packet_id++;
+                txpacket.inst = ??; //debug
+                txpacket.err = status.errors;
+                memcpy(txpacket.data,&rx_buffer[idx],txpacket.data_len);
+                if(xQueueSend(self->tx_queue,&self->txpacket,0) != pdTRUE){
+                    // break; TX_QUEUE_FULL: preserve unsent bytes
+                }
+
+                idx += header_len;
+                status.err &= ~pi_protocol::Comm_Error::CRC_ERR;
             }
+            
+            if(read_available == pi_protocol::rx_buffer_size)
+                txpacket_t txpacket;
+                txpacket.data_len = std::min(idx,sizeof(txpacket.data));
+                txpacket.id = debug_packet_id++;
+                txpacket.inst = ??; //debug
+                txpacket.err = status.errors;
+                memcpy(txpacket.data,rx_buffer,txpacket.data_len);
+                if(xQueueSend(self->tx_queue,&self->txpacket,0) != pdTRUE){
+                    // break; TX_QUEUE_FULL: preserve unsent bytes
+                }
+
+                idx -= txpacket.data_len;
+                read_available -= txpacket.data_len;
+                status.err &= ~pi_protocol::Comm_Error::BUFFER_FULL;
+                
+            
+            if(result == pi_protocol::Comm_Result::PENDING ||'''에러일때 break해야하는데''')
+                break; // cdc callback의 notify받도록 break
         }
     }
 }
 
 pi_protocol::Comm_Result pi_comm::rx_packet(pi_protocol::rxpacket_t &rxpacket)
 {
-    constexpr uint16_t HEADER_LEN = 4;
-    constexpr uint16_t MIN_PACKET_LEN = 11; // rxpacket_len = DATA(N) + 9 (FF FF FD 00 LEN ID INST DATA CRC_L CRC_H)
-    uint8_t byte = 0;
-
-
-    Comm_Result result = Comm_Result::NEED_MORE_DATA;
-    while (rx_buffer.read(byte)) // read one byte
-    {
-        rx_debug_buffer.write(&byte, 1);
-        if (rx_parse_len < HEADER_LEN)
-        {
-            switch (rx_parse_len)
-            {
-                case 0:
-                {
-                    if (byte == 0xFF)
-                    {
-                        rx_parse_start_time_us = esp_timer_get_time();
-                        rx_parse_buffer[0] = byte;
-                        rx_parse_len = 1;
-                    }
-                    break;
-                }
-                case 1:
-                {
-                    if (byte == 0xFF)
-                    {
-                        rx_parse_buffer[1] = byte;
-                        rx_parse_len = 2;
-                    }
-                    else
-                    {
-                        rx_parse_len = 0;
-                    }
-                    break;
-                }
-                case 2:
-                {
-                    if (byte == 0xFD)
-                    {
-                        rx_parse_buffer[2] = byte;
-                        rx_parse_len = 3;
-                    }
-                    else if (byte == 0xFF) // can be 2nd of a new header
-                    {
-                        break;
-                    }
-                    else
-                    {
-                        rx_parse_len = 0;
-                    }
-                    break;
-                }
-                case 3:
-                {
-                    if (byte == 0x00)
-                    {
-                        rx_parse_buffer[3] = byte;
-                        rx_parse_len = 4;
-                    }
-                    else if (byte == 0xFF) // can be 1st of a new header
-                    {
-                        rx_parse_buffer[0] = 0xFF; 
-                        rx_parse_len = 1;
-                    }
-                    else
-                    {
-                        rx_parse_len = 0;
-                    }
-                    break;
-                }
-            }
-            continue;
-        }
-
-        // Read LEN
-        if (rx_parse_len == 4)
-        {
-            rx_packet_len = byte + 9; // rxpacket_len = DATA(N) + 9 (FF FF FD 00 LEN ID INST DATA CRC_L CRC_H)
-            if (rx_packet_len < MIN_PACKET_LEN || rx_packet_len > pi_protocol::RXPACKET_MAX_LEN) // invalid packet length
-            {
-                rx_parse_len = 0;
-                rx_packet_len = 0;
-                continue;
-            }
-            rx_parse_buffer[rx_parse_len++] = byte;
-            if (!rx_buffer.read(byte))
-            {
-                result = 
-            }
-            rx_debug_buffer.write(&byte, 1);
-        }
-
-        // Read ID
-        if (rx_parse_len == 5)
-        {
-            if (byte != 0x...) // invalid id
-            {
-                rx_parse_len = 0;
-                rx_packet_len = 0;
-                continue;
-            }
-            rx_parse_buffer[rx_parse_len++] = byte;
-            rx_buffer.read(byte);
-            rx_debug_buffer.write(&byte, 1);
-        }
-
-        // Read INSTRUCTION
-        if (rx_parse_len == 6)
-        {
-            if (byte != 0x01 && byte != 0x55... ) // invalid inst
-            {
-                rx_parse_len = 0;
-                rx_packet_len = 0;
-                continue;
-            }
-            rx_parse_buffer[rx_parse_len++] = byte;
-            rx_buffer.read(byte);
-            rx_debug_buffer.write(&byte, 1);
-        }
-
-
-        // Read DATA + CRC
-        while (rx_parse_len < rx_packet_len && rx_buffer.read(byte))
-        {
-            rx_debug_buffer.write(&byte, 1);
-            rx_parse_buffer[rx_parse_len++] = byte; 
-        }
-        if (rx_parse_len < rx_packet_len)// Packet not complete yet
-        {break;}
-        
-        // CRC check
-        uint16_t crc = static_cast<uint16_t>(rx_parse_buffer[rx_packet_len - 2]) | (static_cast<uint16_t>(rx_parse_buffer[rx_packet_len - 1]) << 8);
-        uint16_t calculated_crc = updateCRC(0, rx_parse_buffer, rx_packet_len - 2);
-
-        if (calculated_crc != crc)
-        {
-            result = Comm_Result::RX_CORRUPT;
+    while(true){
+        std::size_t rx_size = 0;
+        const esp_err_t ret = tinyusb_cdcacm_read(itf, &rx_buffer[read_available], rx_buffer_size - read_available, &rx_size);
+        '''for safe extra iteration, dont clear notify-value.'''
+        if (ret != ESP_OK){
+            statis.errors |= pi_protocol::Comm_Error::CDC_ERR;
             break;
         }
+        if(rx_size != 0){
+            read_available += rx_size;
+            rx_start_time_us = 0;
+        }
 
-        // if (rx_packet_len - 8 > sizeof(rxpacket.data)) // data so long
-        // {
-        //     rx_parse_len = 0;
-        //     rx_packet_len = 0;
-        //     return Comm_Result::BUF_LEN_OVER;
-        // }
+        bool ready = (!found &&  read_av >= idx + header_len) || // !found일때 header 읽기 가능?
+                (found && !confirm && read_av >= idx + header_len + 3) || // found일때 len,id,inst 필드 읽기 가능?
+                (confirm && read_av >= idx + rx_buffer[idx + pi_protocol::PKT_LENGTH]); // confirm일때 packet 전체 읽기 가능?
+        
+        if(rx_size == 0 && !ready && rx_start_time_us == 0){
+            rx_start_time_us = esp_timer_get_time();
+            status.result = pi_protocol::Comm_Result::PENDING;
+        }
 
-        rxpacket.data_len = rx_packet_len - 8;
-        rxpacket.inst = rx_parse_buffer[PKT_INSTRUCTION];
-        memcpy(rxpacket.data,&rx_parse_buffer[6],rxpacket.data_len);
-        result = unstuffing(rxpacket.data, &rxpacket.data_len);
-        break;
+        if (ready){
+            if(!found){
+                if (read_available >= idx + header_len){ // header 필드 읽기 가능
+                    while (idx <= read_available - header_len){// limit까지만 헤더 확인 가능
+                        uint8_t *p = (uint8_t *)memchr(&rx_buffer[idx], 0xFF, (size_t)(limit_idx - idx + 1));
+                        if (p != nullptr){
+                            idx = (uint16_t)(p - rx_buffer);
+                            if ((rx_buffer[idx + 1] == 0xFF) &&(rx_buffer[idx + 2] == 0xFD) &&(rx_buffer[idx + 3] == 0)){
+                                found = true;
+                                break;
+                            }
+                        }
+                        else{// 남은 구간에 0xFF 없으므로 더 볼 필요 없음
+                            idx = read_available - header_len + 1;
+                            break;
+                        }
+                        idx += 1;
+                    }
+                }
+            }
+            
+            if(found){
+                if (read_available >= idx + header_len + 3){ //len,id,inst 필드 읽기 가능?
+                    if(rx_buffer[idx + pi_protocol::PKT_LENGTH] <= pi_protocol::RXPACKET_MAX_LEN  &&
+                    rx_buffer[idx + pi_protocol::PKT_LENGTH] >= pi_protocol::RXPACKET_MIN_LEN &&
+                    rx_buffer[idx + pi_protocol::PKT_ID] > prev_id && '''wrap-around주의'''
+                    rx_buffer[idx + pi_protocol::PKT_INSTRUCTION] != ??){// len,id,inst 필드 정상
+                        confirm = true;
+                        packet_len = rx_buffer[idx + pi_protocol::PKT_LENGTH];
+                        if(read_available >= idx + packet_len){ // data 읽기 가능
+                            // CRC(little endian L,H)
+                            uint16_t crc = static_cast<uint16_t>(rx_buffer[idx + packet_len-2]) | // L byte
+                                            (static_cast<uint16_t>(rx_buffer[idx + packet_len-1]) << 8); // H byte
+                            uint16_t calculated_crc = updateCRC(0, &rx_buffer[idx], packet_len-2); //without crc 2 byte
+                            if(crc == calculated_crc){// (FF FF FD 00 LEN ID INST DATA CRC_L CRC_H)
+                                rxpacket.data_len = packet_len - 9; // rxpacket_len = DATA(N) + 9 
+                                rxpacket.id = rx_buffer[idx + pi_protocol::PKT_ID];
+                                rxpacket.inst = rx_buffer[idx + pi_protocol::PKT_INSTRUCTION];
+                                memcpy(rxpacket.data,&rx_buffer[idx+pi_protocol::PKT_DATA],rxpacket.data_len);
+                                result = unstuffing(rxpacket.data, &rxpacket.data_len);
+
+                                memmove(&rx_buffer[idx],rx_buffer + idx + packet_len,read_available - (idx + packet_len));
+                                read_available -= packet_len;
+                                found = false;
+                                
+                                status.result |= pi_protocol::Comm_Result::SUCCESS; 
+                            }
+                            else:{
+                                status.result |= pi_protocol::Comm_Result::FAILURE;
+                            }
+                            found = false;
+                            confirm = false;
+                            rx_start_time_us = 0;
+                        }
+                    }
+                    else{
+                        found = false;
+                        confirm = false;
+                        idx += header_len;
+                    }
+                }
+            }
+        }
+            
+        if(read_available == pi_protocol::rx_buffer_size){
+            status.errors |= pi_protocol::Comm_Error::BUFFER_FULL;
+        }
+        if(stuts.result != Null || status.err != 0)
+            break;
     }
-
-    rx_parse_len = 0;
-    rx_packet_len = 0;
-    return result;
+    return status;
 }
 
 void pi_comm::packet_process_task(void *arg)
@@ -333,6 +315,9 @@ void pi_comm::packet_process_task(void *arg)
                 break;
 
             case INST_STOP:
+                break;
+            
+            case INST_SLEEP: // stop sending packets, don't send rxtimeout err
                 break;
 
             default:

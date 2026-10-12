@@ -26,67 +26,7 @@ void pi_comm::rx_task(void *arg){
                 pi_protocol::Comm_Result result = self->rx_packet(rxpacket;);
                 '''result,err,status 나눠서 의미부여.'''
 
-            if(result == pi_protocol::Comm_Result::SUCCESS)
-                // 완료된 패킷저장 -> process에서 해도될듯?
-                if (xQueueSend(self->rx_queue, &self->rxpacket, 0) != pdTRUE){
-                    xQueueReset(self->rx_queue);
-                    xQueueSend(self->rx_queue, &self->rxpacket, 0);
-                }
-                // idx, read_av 완료된 패킷만 비우고 당기기 -> process에서 해도될듯?
-
-                size_t sent_bytes = 0;
-                while (sent_bytes < idx) // 0~idx전까지 debug용 바이트스트림 연결시키기.
-                {
-                    txpacket_t txpacket{};
-                    txpacket.data_len = std::min(debug_len - sent_bytes,sizeof(txpacket.data));
-                    txpacket.id = debug_packet_id;
-                    txpacket.inst = /* debug */;
-                    txpacket.err = self->status.errors;
-
-                    memcpy(txpacket.data,rx_buffer + sent_bytes,txpacket.data_len);
-                    if (xQueueSend(self->tx_queue, &txpacket, 0) != pdTRUE){
-                        // break; TX_QUEUE_FULL: preserve unsent bytes
-                        '''실패시 구체화 필요. '''
-                    }
-                    sent_bytes += txpacket.data_len;
-                    debug_packet_id++;
-                }
-                if (sent_bytes > 0){
-                    memmove(rx_buffer,rx_buffer + sent_bytes,read_available - sent_bytes);
-                    idx -= sent_bytes;
-                    read_available -= sent_bytes;
-                }
-
-            if(result == pi_protocol::Comm_Result::FAILURE) // crc_err
-                txpacket_t txpacket;
-                txpacket.data_len = packet_len;
-                txpacket.id = debug_packet_id++;
-                txpacket.inst = ??; //debug
-                txpacket.err = status.errors;
-                memcpy(txpacket.data,&rx_buffer[idx],txpacket.data_len);
-                if(xQueueSend(self->tx_queue,&self->txpacket,0) != pdTRUE){
-                    // break; TX_QUEUE_FULL: preserve unsent bytes
-                }
-
-                idx += header_len;
-                status.err &= ~pi_protocol::Comm_Error::CRC_ERR;
-
-            if(status.err & pi_protocol::Comm_err::BUFFER_FULL)
-                txpacket_t txpacket;
-                txpacket.data_len = std::min(idx,sizeof(txpacket.data));
-                txpacket.id = debug_packet_id++;
-                txpacket.inst = ??; //debug
-                txpacket.err = status.errors;
-                memcpy(txpacket.data,rx_buffer,txpacket.data_len);
-                if(xQueueSend(self->tx_queue,&self->txpacket,0) != pdTRUE){
-                    // break; TX_QUEUE_FULL: preserve unsent bytes
-                }
-
-                idx -= txpacket.data_len;
-                read_available -= txpacket.data_len;
-                status.err &= ~pi_protocol::Comm_Error::BUFFER_FULL;
-                
-            if(status.err != 0) '''즉시 복구 가능. 그냥 미리 패킷만들어서 바로 보내자.'''
+            if(comm_err != 0){ '''알림만 보내고 조취x'''
                 if(status.err & pi_protocol::Comm_err::RX_TIMEOUT){
                     txpacket_t txpacket;
                     txpacket.data_len = 2;
@@ -117,6 +57,68 @@ void pi_comm::rx_task(void *arg){
                         // break; TX_QUEUE_FULL: preserve unsent bytes
                     }
                     status.err &= ~pi_protocol::Comm_Error::CDC_ERR;
+            }
+            if(result == pi_protocol::Comm_Result::SUCCESS){
+                // 완료된 패킷저장 -> process에서 해도될듯?
+                if (xQueueSend(self->rx_queue, &self->rxpacket, 0) != pdTRUE){
+                    xQueueReset(self->rx_queue);
+                    xQueueSend(self->rx_queue, &self->rxpacket, 0);
+                }
+                // idx, read_av 완료된 패킷만 비우고 당기기 -> process에서 해도될듯?
+
+                size_t sent_bytes = 0;
+                while (sent_bytes < idx) // 0~idx전까지 debug용 바이트스트림 연결시키기.
+                {
+                    txpacket_t txpacket{};
+                    txpacket.data_len = std::min(debug_len - sent_bytes,sizeof(txpacket.data));
+                    txpacket.id = debug_packet_id;
+                    txpacket.inst = /* debug */;
+                    txpacket.err = self->status.errors;
+
+                    memcpy(txpacket.data,rx_buffer + sent_bytes,txpacket.data_len);
+                    if (xQueueSend(self->tx_queue, &txpacket, 0) != pdTRUE){
+                        // break; TX_QUEUE_FULL: preserve unsent bytes
+                        '''실패시 구체화 필요. '''
+                    }
+                    sent_bytes += txpacket.data_len;
+                    debug_packet_id++;
+                }
+                if (sent_bytes > 0){
+                    memmove(rx_buffer,rx_buffer + sent_bytes,read_available - sent_bytes);
+                    idx -= sent_bytes;
+                    read_available -= sent_bytes;
+                }
+            }
+            if(result == pi_protocol::Comm_Result::FAILURE){ // crc_err
+                txpacket_t txpacket;
+                txpacket.data_len = packet_len;
+                txpacket.id = debug_packet_id++;
+                txpacket.inst = ??; //debug
+                txpacket.err = status.errors;
+                memcpy(txpacket.data,&rx_buffer[idx],txpacket.data_len);
+                if(xQueueSend(self->tx_queue,&self->txpacket,0) != pdTRUE){
+                    // break; TX_QUEUE_FULL: preserve unsent bytes
+                }
+
+                idx += header_len;
+                status.err &= ~pi_protocol::Comm_Error::CRC_ERR;
+            }
+            
+            if(read_available == pi_protocol::rx_buffer_size)
+                txpacket_t txpacket;
+                txpacket.data_len = std::min(idx,sizeof(txpacket.data));
+                txpacket.id = debug_packet_id++;
+                txpacket.inst = ??; //debug
+                txpacket.err = status.errors;
+                memcpy(txpacket.data,rx_buffer,txpacket.data_len);
+                if(xQueueSend(self->tx_queue,&self->txpacket,0) != pdTRUE){
+                    // break; TX_QUEUE_FULL: preserve unsent bytes
+                }
+
+                idx -= txpacket.data_len;
+                read_available -= txpacket.data_len;
+                status.err &= ~pi_protocol::Comm_Error::BUFFER_FULL;
+                
             
             if(result == pi_protocol::Comm_Result::PENDING ||'''에러일때 break해야하는데''')
                 break; // cdc callback의 notify받도록 break

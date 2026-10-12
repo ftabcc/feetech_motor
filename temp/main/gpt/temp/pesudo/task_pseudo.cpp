@@ -10,6 +10,8 @@ task(){
 
         if(!(status.err & timeout))
             notify = wait(wait_time)
+        '''순수하게 아무것도 안들어온 타임아웃: 그냥 명령이 없는듯
+        들어오다가 타임아웃: 통신이상취급'''
             if (!notify)
                 // status.err |= timeout;
 

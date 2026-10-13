@@ -154,7 +154,7 @@ void pi_comm::rx_task(void *arg){
                 if(result == success) // 다음부터는 byte stream이 의미적으로 연결안됨.
                     debug_packet_id = 0;
                 
-                if (sent_bytes > 0){
+                if (sent_bytes > 0){ '''tx큐 초기화 이후에도 실패가능. tx성공여부에 따라 당기기 진행필요.timeout직전에 바이트 도착가능. 이경우, found,confirm여부에 따라 당기기를 진행할지 말지 선택해야함'''
                     memmove(rx_buffer,rx_buffer + sent_bytes,read_available - sent_bytes);
                     idx = 0;
                     read_available -= sent_bytes;

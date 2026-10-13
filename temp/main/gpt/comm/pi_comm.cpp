@@ -60,13 +60,10 @@ void pi_comm::rx_callback(int itf, cdcacm_event_t *event)
 }
 
 '''
-10-13일 이후 확인할것들.
-1. succes이후 timeout어떻게 되는지.
-2. timeout에서 task의 while나가도 되는지.
-'''
+10-14이후'''
 void pi_comm::rx_task(void *arg){
     pi_comm *self = static_cast<pi_comm *>(arg);
-    pi_protocol::rxpacket_t rxpacket;
+    
     while(true){
         TickType_t wait_ticks;
         if(self->rx_start_time_us != 0){
@@ -96,18 +93,18 @@ void pi_comm::rx_task(void *arg){
                 const char *err_name = esp_err_to_name(ret);
                 txpacket.data_len = std::min(strlen(err_name), sizeof(txpacket.data) - 1);
                 txpacket.id = warning_packet_id++;
-                txpacket.inst = ??; // USB connect warning
+                txpacket.inst = ??; // CDC_ERR
                 txpacket.err = status.errors;
                 memcpy(txpacket.data, err_name, len);
-                if (xQueueSend(self->tx_queue, &txpacket, 0) != pdTRUE){
-                        xQueueReset(self->tx_queue);
-                        xQueueSend(self->tx_queue, &self->txpacket, 0);
-                    }
+                if (xQueueSend(self->tx_queue, &txpacket, pdMS_TO_TICKS(10)) != pdTRUE) {
+                    // Do not reset the queue, Preserve the unsent debug bytes and retry later.
+                }'''지금은 tx큐 가득차는 경우없다고 가정.'''
                 status.err &= ~pi_protocol::Comm_Error::CDC_ERR;
             }
 
             if(status.result == pi_protocol::Comm_Result::SUCCESS){
                 // 보낼 rxpacket 완성하기
+                pi_protocol::rxpacket_t rxpacket;
                 uint8_t packet_len = rx_buffer[idx + pi_protocol::PKT_LENGTH];
                 rxpacket.data_len = packet_len - 9; // rxpacket_len = DATA(N) + 9 
                 rxpacket.id = rx_buffer[idx + pi_protocol::PKT_ID];
@@ -118,35 +115,31 @@ void pi_comm::rx_task(void *arg){
                 memmove(&rx_buffer[idx],rx_buffer + idx + packet_len,read_available - (idx + packet_len));
                 read_available -= packet_len;
                 // 패킷 보내기
-                if (xQueueSend(self->rx_queue, &self->rxpacket, 0) != pdTRUE){
+                if (xQueueSend(self->rx_queue, &rxpacket, 0) != pdTRUE){
                     xQueueReset(self->rx_queue);
-                    xQueueSend(self->rx_queue, &self->rxpacket, 0);
+                    xQueueSend(self->rx_queue, &rxpacket, 0);
                 }
             }
-            if(status.result == pi_protocol::Comm_Result::FAILURE){
+            if(status.result == pi_protocol::Comm_Result::FAILURE){ // CRC_ERR, just check next
                 idx += header_len;
             }
             
             // connect byte debug stream. timeout: [0,all], full & success: [0,idx)
             if(status.errors != 0 || status.result == pi_protocol::Comm_Result::SUCCESS ||){
-                '''timeout직전에 바이트 도착가능. 이경우, found,confirm여부에 따라 당기기를 진행할지 말지 선택해야함.'''
                 size_t sent_bytes = 0;
                 size_t untill = (status.errors & pi_protocol::Comm_err::RX_TIMEOUT ? read_available : idx);
                 while (sent_bytes < untill)
                 {
-                    txpacket_t txpacket{};
+                    pi_protocol::txpacket_t txpacket{};
                     txpacket.data_len = std::min(untill - sent_bytes,sizeof(txpacket.data));
                     txpacket.id = debug_packet_id;
                     txpacket.inst = /* debug */;
                     txpacket.err = self->status.errors;
 
                     memcpy(txpacket.data,rx_buffer + sent_bytes,txpacket.data_len);
-                    '''rx,tx모두 지역변수? 아니면 전역? 수정필요'''
-                    '''txqueue를 가득찰때 아무렇게나 초기화 하면 debug스트림 끊길수있음.'''
-                    if (xQueueSend(self->tx_queue, &txpacket, 0) != pdTRUE){
-                        xQueueReset(self->tx_queue);
-                        xQueueSend(self->tx_queue, &self->txpacket, 0);
-                    }
+                    if (xQueueSend(self->tx_queue, &txpacket, pdMS_TO_TICKS(10)) != pdTRUE) {
+                        // Do not reset the queue, Preserve the unsent debug bytes and retry later.
+                    }'''지금은 tx큐 가득차는 경우없다고 가정.'''
                     sent_bytes += txpacket.data_len;
                     debug_packet_id++;
                 }
@@ -154,25 +147,31 @@ void pi_comm::rx_task(void *arg){
                 if(result == success) // 다음부터는 byte stream이 의미적으로 연결안됨.
                     debug_packet_id = 0;
                 
-                if (sent_bytes > 0){ '''tx큐 초기화 이후에도 실패가능. tx성공여부에 따라 당기기 진행필요.timeout직전에 바이트 도착가능. 이경우, found,confirm여부에 따라 당기기를 진행할지 말지 선택해야함'''
+                if (sent_bytes > 0){ '''tx-debug 실패가능.성공한 바이트들만 당기기 진행필요'''
                     memmove(rx_buffer,rx_buffer + sent_bytes,read_available - sent_bytes);
                     idx = 0;
                     read_available -= sent_bytes;
                 }
                 status.err &= ~pi_protocol::Comm_Error::BUFFER_FULL;
+                if(status.err & pi_protocol::Comm_Error::RX_TIMEOUT){
+                    status.err &= ~pi_protocol::Comm_Error::RX_TIMEOUT;
+                    self->rx_start_time_us = 0;
+                    self->idx = 0;
+                    self->read_available = 0;
+                    self->found = false;
+                    self->confirm = false;
+                    break;
+                }
             }
                 
-            if(result == pi_protocol::Comm_Result::PENDING || status.err & pi_protocol::Comm_Error::RX_TIMEOUT){
-                status.err &= ~pi_protocol::Comm_Error::RX_TIMEOUT; //위에서 timeout처리 완료해서 여기선 할일 없음.
-                self->rx_start_time_us = 0;
-                '''추가적 초기화 필요? confirm,idx,read_av,...'''
+            if(result == pi_protocol::Comm_Result::PENDING){
                 break; // cdc callback의 notify받도록 break
             }
         }
     }
 }
 
-pi_protocol::Comm_Result pi_comm::rx_packet(pi_protocol::rxpacket_t &rxpacket)
+pi_protocol::RX_Result pi_comm::rx_packet(pi_protocol::rxpacket_t &rxpacket)
 {
     while(true){
         '''status 초기화 필요.'''
@@ -180,7 +179,7 @@ pi_protocol::Comm_Result pi_comm::rx_packet(pi_protocol::rxpacket_t &rxpacket)
         const esp_err_t ret = tinyusb_cdcacm_read(itf, &rx_buffer[read_available], rx_buffer_size - read_available, &rx_size);
         '''for safe extra iteration, dont clear notify-value.'''
         if (ret != ESP_OK){
-            statis.errors |= pi_protocol::Comm_Error::CDC_ERR;
+            status.errors |= pi_protocol::Comm_Error::CDC_ERR;
             break;
         }
         if(rx_size != 0){

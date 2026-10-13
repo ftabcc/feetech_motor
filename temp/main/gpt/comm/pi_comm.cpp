@@ -71,7 +71,7 @@ void pi_comm::rx_task(void *arg){
         TickType_t wait_ticks;
         if(self->rx_start_time_us != 0){
             const int64_t elapsed_us = esp_timer_get_time() - self->rx_start_time_us;
-            if (elapsed_us > pi_protocol::RX_TIMEOUT_US && self->idx != 0)
+            if (elapsed_us > pi_protocol::RX_TIMEOUT_US && self->read_available != 0)
                 status.errors |= pi_protocol::Comm_err::RX_TIMEOUT;
             else{
                 wait_ticks = pdMS_TO_TICKS(static_cast<uint32_t>((pi_protocol::RX_TIMEOUT_US - elapsed_us + 999) / 1000));
@@ -84,7 +84,7 @@ void pi_comm::rx_task(void *arg){
 
         if(!(status.errors & pi_protocol::Comm_err::RX_TIMEOUT)){
             BaseType_t notified = xTaskNotifyWait(0,0xFFFFFFFF,&notify_value,wait_ticks);
-            if (notified == pdFALSE && self->idx != 0) // 읽던 바이트가 있을때
+            if (notified == pdFALSE && self->read_available != 0) // 읽던 바이트가 있을때
                 status.errors |= pi_protocol::Comm_err::RX_TIMEOUT;
         }
         while (true){
@@ -129,6 +129,7 @@ void pi_comm::rx_task(void *arg){
             
             // connect byte debug stream. timeout: [0,all], full & success: [0,idx)
             if(status.errors != 0 || status.result == pi_protocol::Comm_Result::SUCCESS ||){
+                '''timeout직전에 바이트 도착가능. 이경우, found,confirm여부에 따라 당기기를 진행할지 말지 선택해야함.'''
                 size_t sent_bytes = 0;
                 size_t untill = (status.errors & pi_protocol::Comm_err::RX_TIMEOUT ? read_available : idx);
                 while (sent_bytes < untill)
@@ -140,6 +141,8 @@ void pi_comm::rx_task(void *arg){
                     txpacket.err = self->status.errors;
 
                     memcpy(txpacket.data,rx_buffer + sent_bytes,txpacket.data_len);
+                    '''rx,tx모두 지역변수? 아니면 전역? 수정필요'''
+                    '''txqueue를 가득찰때 아무렇게나 초기화 하면 debug스트림 끊길수있음.'''
                     if (xQueueSend(self->tx_queue, &txpacket, 0) != pdTRUE){
                         xQueueReset(self->tx_queue);
                         xQueueSend(self->tx_queue, &self->txpacket, 0);
@@ -153,15 +156,16 @@ void pi_comm::rx_task(void *arg){
                 
                 if (sent_bytes > 0){
                     memmove(rx_buffer,rx_buffer + sent_bytes,read_available - sent_bytes);
-                    idx -= sent_bytes;
+                    idx = 0;
                     read_available -= sent_bytes;
                 }
                 status.err &= ~pi_protocol::Comm_Error::BUFFER_FULL;
             }
                 
             if(result == pi_protocol::Comm_Result::PENDING || status.err & pi_protocol::Comm_Error::RX_TIMEOUT){
-                status.err &= ~pi_protocol::Comm_Error::RX_TIMEOUT;
+                status.err &= ~pi_protocol::Comm_Error::RX_TIMEOUT; //위에서 timeout처리 완료해서 여기선 할일 없음.
                 self->rx_start_time_us = 0;
+                '''추가적 초기화 필요? confirm,idx,read_av,...'''
                 break; // cdc callback의 notify받도록 break
             }
         }
@@ -171,6 +175,7 @@ void pi_comm::rx_task(void *arg){
 pi_protocol::Comm_Result pi_comm::rx_packet(pi_protocol::rxpacket_t &rxpacket)
 {
     while(true){
+        '''status 초기화 필요.'''
         std::size_t rx_size = 0;
         const esp_err_t ret = tinyusb_cdcacm_read(itf, &rx_buffer[read_available], rx_buffer_size - read_available, &rx_size);
         '''for safe extra iteration, dont clear notify-value.'''
@@ -189,7 +194,7 @@ pi_protocol::Comm_Result pi_comm::rx_packet(pi_protocol::rxpacket_t &rxpacket)
         
         if(rx_size == 0 && !ready){
             status.result = pi_protocol::Comm_Result::PENDING;
-            if(rx_start_time_us == 0)
+            if(read_available != 0 && rx_start_time_us == 0)
                 rx_start_time_us = esp_timer_get_time();
         }
 
@@ -197,7 +202,7 @@ pi_protocol::Comm_Result pi_comm::rx_packet(pi_protocol::rxpacket_t &rxpacket)
             if(!found){
                 if (read_available >= idx + header_len){ // header 필드 읽기 가능
                     while (idx <= read_available - header_len){// limit까지만 헤더 확인 가능
-                        uint8_t *p = (uint8_t *)memchr(&rx_buffer[idx], 0xFF, (size_t)(limit_idx - idx + 1));
+                        uint8_t *p = (uint8_t *)memchr(&rx_buffer[idx], 0xFF, (size_t)(read_available - header_len - idx + 1));
                         if (p != nullptr){
                             idx = (uint16_t)(p - rx_buffer);
                             if ((rx_buffer[idx + 1] == 0xFF) &&(rx_buffer[idx + 2] == 0xFD) &&(rx_buffer[idx + 3] == 0)){

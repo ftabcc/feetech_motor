@@ -150,7 +150,7 @@ void pi_comm::rx_task(void *arg){
                     self->confirm = false;
                     break;
                 }
-                
+                '''cdc 가 full밑에있으면 처리 못할수도'''
                 if(self->rx_errors & pi_protocol::rx_error::CDC_ERR){
                     txpacket_t txpacket;
                     const char *err_name = esp_err_to_name(ret);

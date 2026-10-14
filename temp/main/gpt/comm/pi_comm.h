@@ -30,12 +30,12 @@ namespace pi_protocol
     constexpr uint16_t TX_DATA_IDX         = 8;
 
     // packet length range
-    constexpr uint8_t RXPACKET_MAX_LEN = 255; // LEN field is 1 byte
-    constexpr uint8_t RXPACKET_MIN_LEN = 11;
-    constexpr uint8_t TXPACKET_MAX_LEN = 255;
-    constexpr uint8_t TXPACKET_MIN_LEN = 12;
-    constexpr uint8_t RXPACKET_MAX_NUM = 100;
-    constexpr uint8_t TXPACKET_MAX_NUM = 100;
+    constexpr uint8_t RX_PACKET_MAX_LEN = 255; // LEN field is 1 byte
+    constexpr uint8_t RX_PACKET_MIN_LEN = 11;
+    constexpr uint8_t TX_PACKET_MAX_LEN = 255;
+    constexpr uint8_t TX_PACKET_MIN_LEN = 12;
+    constexpr uint8_t RX_PACKET_MAX_NUM = 100;
+    constexpr uint8_t TX_PACKET_MAX_NUM = 100;
 
     // rx_timeout : 더 이상 확인할 바이트가 없는 상태유지 허용임계점 
     // '''너무 짧으면 잠깐 끊긴 정상패킷을 버리게 될수도있으니 적당하게 잡아야함'''
@@ -62,12 +62,13 @@ namespace pi_protocol
     };
 
     // COMM_status
-    enum class RX_Result : uint8_t{
+    enum class rx_result : uint8_t{
         SUCCESS        = 0,
-        PENDING        = 1,  //INCOMPLETE, need more data, Pending, wait
+        WAITING        = 1,  //INCOMPLETE, need more data, Pending, wait
         FAILURE        = 2,
+        NOTHING        = 3
     };
-    enum class RX_Errors : uint8_t{
+    enum class rx_error : uint8_t{
         CRC_ERR        = 1 << 0,  // 0000 0001
         BUFFER_FULL    = 1 << 1,  // 0000 0010
         RX_TIMEOUT     = 1 << 2,  // 0000 0100
@@ -102,18 +103,16 @@ private:
 
     uint8_t rx_buffer[pi_protocol::RXPACKET_MAX_LEN*N]{};
     int64_t rx_wait_start_time_us = 0;
-    uint8_t rx_packet_len = 0; // 0 ~ max_len
     size_t idx = 0; // 0~ max_len*n
     size_t read_available = 0;
     bool found = false;
     bool confirm = false;
     uint8_t rx_errors = 0;
-
     
     static void rx_callback(int itf, cdcacm_event_t *event);
 
     static void rx_task(void *arg);
-    pi_protocol::RX_Result rx_packet(pi_protocol::rxpacket_t &rxpacket);
+    pi_protocol::rx_result rx_packet(pi_protocol::rxpacket_t &rxpacket);
     static void tx_task(void *arg);
     pi_protocol::Comm_Result tx_packet(pi_protocol::txpacket_t &txpacket);
 

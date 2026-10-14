@@ -60,7 +60,9 @@ void pi_comm::rx_callback(int itf, cdcacm_event_t *event)
 }
 
 '''
-10-14이후'''
+10-15이후
+cdc,tiemout상태에서 남아있는 바이트들이 sleep상태에서 영향주나?
+'''
 void pi_comm::rx_task(void *arg){
     pi_comm *self = static_cast<pi_comm *>(arg);
     
@@ -83,12 +85,13 @@ void pi_comm::rx_task(void *arg){
             BaseType_t notified = xTaskNotifyWait(0,0xFFFFFFFF,&notify_value,wait_ticks);
             if (notified == pdFALSE && self->read_available != 0) // 읽던 바이트가 있을때
                 self->rx_errors |= pi_protocol::rx_error::RX_TIMEOUT;
+                '''tick이 정확하지 않아서 위에서 시간단위로 확인 필요.'''
         }
         while (true){
             if(!(self->rx_errors & pi_protocol::rx_error::RX_TIMEOUT))
-                status = self->rx_packet(rxpacket;);
+                pi_protocol::rx_result result = self->rx_packet(rxpacket;);
 
-            if(status.result == pi_protocol::rx_result::SUCCESS){
+            if(result == pi_protocol::rx_result::SUCCESS){
                 // 보낼 rxpacket 완성하기
                 pi_protocol::rxpacket_t rxpacket;
                 uint8_t packet_len = rx_buffer[idx + pi_protocol::RX_LENGTH_IDX];
@@ -99,22 +102,21 @@ void pi_comm::rx_task(void *arg){
                 unstuffing(rxpacket.data, &rxpacket.data_len);
                 // 완성된 packet빼고 buffer당기기
                 memmove(&rx_buffer[idx],rx_buffer + idx + packet_len,read_available - (idx + packet_len));
-                read_available -= packet_len;
+                self->read_available -= packet_len;
                 // 패킷 보내기
                 if (xQueueSend(self->rx_queue, &rxpacket, 0) != pdTRUE){
                     xQueueReset(self->rx_queue);
                     xQueueSend(self->rx_queue, &rxpacket, 0);
                 }
             }
-            if(status.result == pi_protocol::rx_result::FAILURE){ // CRC_ERR, just check next
-                idx += header_len;
+            if(result == pi_protocol::rx_result::FAILURE){ // CRC_ERR, just check next
+                self->idx += pi_protocol::HEADER_LEN;
             }
             
             // connect byte debug stream. timeout: [0,all], full & success: [0,idx)
-            if(self->rx_errors != 0 || status.result == pi_protocol::rx_result::SUCCESS ||){
+            if(self->rx_errors != 0 || result == pi_protocol::rx_result::SUCCESS ||){
                 size_t sent_bytes = 0;
-                size_t untill = (self->rx_errors & pi_protocol::rx_error::RX_TIMEOUT ? read_available : idx);
-                while (sent_bytes < untill)
+                while (sent_bytes < idx)
                 {
                     pi_protocol::txpacket_t txpacket{};
                     txpacket.data_len = std::min(untill - sent_bytes,sizeof(txpacket.data));
@@ -135,8 +137,8 @@ void pi_comm::rx_task(void *arg){
                 
                 if (sent_bytes > 0){ '''tx-debug 실패가능.성공한 바이트들만 당기기 진행필요'''
                     memmove(rx_buffer,rx_buffer + sent_bytes,read_available - sent_bytes);
-                    idx = 0;
-                    read_available -= sent_bytes;
+                    self->idx = 0;
+                    self->read_available -= sent_bytes;
                 }
                 self->rx_errors &= ~pi_protocol::rx_error::BUFFER_FULL;
                 if(self->rx_errors & pi_protocol::rx_error::RX_TIMEOUT){
@@ -163,7 +165,6 @@ void pi_comm::rx_task(void *arg){
                     self->rx_errors &= ~pi_protocol::rx_error::CDC_ERR;
                     break;
                 }
-
             }
                 
             if(result == pi_protocol::rx_result::WAITING){
@@ -177,8 +178,8 @@ pi_protocol::rx_result pi_comm::rx_packet(pi_protocol::rxpacket_t &rxpacket)
 {
     pi_protocol::rx_result result = pi_protocol::rx_result::NOTHING;
     while(true){
-        '''status 초기화 필요.'''
         std::size_t rx_size = 0;
+
         const esp_err_t ret = tinyusb_cdcacm_read(itf, &rx_buffer[read_available], rx_buffer_size - read_available, &rx_size);
         '''for safe extra iteration, dont clear notify-value.'''
         if (ret != ESP_OK){

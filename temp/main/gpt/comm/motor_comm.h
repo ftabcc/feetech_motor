@@ -58,6 +58,7 @@ public:
     motor2esp_packet_t rxpacket;
     
 private:
+    const TickType_t control_period = pdMS_TO_TICKS(CONTROL_PERIOD_MS);
     static void rx_task(int itf,cdcacm_event_t *event);
     static int rx_packet(int itf);
     static void tx_packet(int itf,cdcacm_event_t *event);

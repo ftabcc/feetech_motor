@@ -21,7 +21,6 @@ void init()
     // read task
     xTaskCreate(rx_task,"rx_task",4096,NULL,10,NULL);
     // write task
-    x
 
 }
 
@@ -173,7 +172,123 @@ static int rx_packet();
     return result;
 }
 
-// motor_task
+// motor_task 여러 명령들을 받는 중심
+void motor_comm::tx_task(void *arg)
+{
+    motor_comm *self = static_cast<motor_comm *>(arg);
+    motor_protocol::txpacket_t txpacket;
+    while (true)
+    {
+        if (xQueueReceive(self->tx_queue, &txpacket, portMAX_DELAY) == pdTRUE)
+        {self->tx_packet(&txpacket);}
+    }
+}
+
+// 실시간 모터제어 task. 보내고, n번마다 feedback.
+void motor_comm::control_task(void *arg)
+{
+    motor_comm *self = static_cast<mntor_comm *>(arg);
+    motor_protocol::txpacket_t txpacket;
+    while (true)
+    {
+        notify();
+        while(trajectory.available){
+            waypoint_t *p = &trajectory->points[trajectory->read_idx];
+            // HEAD(2) + ID(1) + LEN(1) + INST(1) + DATA(84) + CHECKSUM(1)
+            size_t idx = 0;
+            txpacket[idx++] = 0xFF;  // Header0
+            txpacket[idx++] = 0xFF;  // Header1
+            txpacket[idx++] = 0xFE;  // Broadcast ID
+            txpacket[idx++] = 0x64;  // LEN: 1 + 2 + 12*8 + 1 = 100
+            txpacket[idx++] = 0x83;  // INST: SYNC_WRITE
+
+            txpacket[idx++] = 0x29;  // DATA0: start address
+            txpacket[idx++] = 0x08;  // DATA1: each id's data len
+            for (int i = 0; i < JOINT_COUNT; i++)
+            {
+                // ID (1 byte)
+                txpacket[idx++] = (uint8_t)i;
+
+                // ACC (1 byte)
+                txpacket[idx++] = (uint8_t)p->a[i];
+
+                // POS (2 bytes)
+                uint16_t q = (uint16_t)p->q[i];
+                txpacket[idx++] = (uint8_t)(q >> 8);
+                txpacket[idx++] = (uint8_t)q;
+
+                // MAX_TIME (2 bytes)
+                txpacket[idx++] = 0;
+                txpacket[idx++] = 0;
+
+                // VEL (2 bytes)
+                uint16_t v = (uint16_t)p->v[i];
+                txpacket[idx++] = (uint8_t)(v >> 8);
+                txpacket[idx++] = (uint8_t)v;
+            }
+
+            // CHECKSUM = ~(ID + LEN + INST + DATA)
+            uint8_t sum = 0;
+            for (size_t i = 2; i < idx; i++)
+            {
+                sum += txpacket[i];
+            }
+            txpacket[idx++] = ~sum;
+
+            uart_write_bytes(UART_PORT, (const char *)txpacket, idx);
+            trajectory->read_idx = (trajectory->read_idx + 1) % TRAJECTORY_BUFFER_SIZE;
+            trajectory->count--;
+
+            // motor_control response
+            if (return_response)
+            {
+                rx_packet();
+            }
+
+            // READ_STATE
+            control_count++;
+            if (control_count >= read_every)
+            {
+                control_count = 0;
+                // HEAD(2) + ID(1) + LEN(1) + INST(1) + DATA(84) + CHECKSUM(1)
+                size_t idx = 0;
+                txpacket[idx++] = 0xFF;  // Header0
+                txpacket[idx++] = 0xFF;  // Header1
+                txpacket[idx++] = 0xFE;  // Broadcast ID
+                txpacket[idx++] = 0x64;  // LEN: 1 + 2 + 12*8 + 1 = 100
+                txpacket[idx++] = 0x82;  // INST: SYNC_READ
+
+                txpacket[idx++] = 0x29;  // DATA0: start address
+                txpacket[idx++] = 0x07;  // DATA1: how many bytes read
+                for (int i = 0; i < JOINT_COUNT; i++)
+                {txpacket[idx++] = (uint8_t)i;}
+                // CHECKSUM = ~(ID + LEN + INST + DATA)
+                uint8_t sum = 0;
+                for (size_t i = 2; i < idx; i++)
+                {
+                    sum += txpacket[i];
+                }
+                txpacket[idx++] = ~sum;
+
+                uart_write_bytes(UART_PORT, (const char *)txpacket, idx);
+
+                // parse packet, SCS.cpp참고
+                for (int i = 0; i < JOINT_COUNT; i++){
+                    if (rxpacket()){
+                        p.a[rxpacket.id] = rxpacket.data[5+1];
+                        p.q[rxpacket.id] = (float)(((uint16_t)rxpacket->data[5+2] << 8) | (uint16_t)rxpacket->data[5+3]);
+                        p.v[rxpacket.id] = (float)(((uint16_t)rxpacket->data[5+6] << 8) | (uint16_t)rxpacket->data[5+7]);
+                    }
+                    else{
+                        // sync_read_err
+                    }
+                }
+            }
+        }
+    }
+}
+
+// 단순 패킷전송함수로 변경할것.
 void tx_packet(void *arg)
 {
     trajectory_t *trajectory = (trajectory_t *)arg;
@@ -285,6 +400,3 @@ void tx_packet(void *arg)
         }
     }
 }
-
-// 하달받은 모터통신패킷전달함수도 필요함
-// void tx_packet()

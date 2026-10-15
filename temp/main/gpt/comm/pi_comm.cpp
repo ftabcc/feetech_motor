@@ -174,6 +174,7 @@ void pi_comm::rx_task(void *arg){
     }
 }
 
+'''15일 이후. rx_packet은 타임아웃 처리를 내부에 넣고, 함수 호출시 하나의 패킷을 파싱하고 result도출하게 변경하기. 즉 tiemout전까지 함수 내부에서 sleep_loop돌기.'''
 pi_protocol::rx_result pi_comm::rx_packet(pi_protocol::rxpacket_t &rxpacket)
 {
     pi_protocol::rx_result result = pi_protocol::rx_result::NOTHING;

@@ -32,9 +32,7 @@ task(){
             // 그냥 send_queue,debug다 한뒤에 memmove한번에 할까?
         }
         if(result = failure){
-            if(read_avail > idx + packet_len){
-                wait = false;
-            }
+            wait = false;
             idx += header_len; // 헤더가 될 수 없는 바이트는 건너뛰기
             send_err(crc_err);
         }
@@ -58,7 +56,7 @@ packet(){
     result = nothing;
     while(true){
         read();
-        
+
         // 첫 packet함수 호출이고, rx_buffer에 읽을게 있으면 read_size가 0 이어도 callback의 wait없이 확인process거쳐가자.
         if(read_size=0 && !(first_loop && read_avail!=0)){ 
             notify_wait(timeout) // from rx_callback.
@@ -134,7 +132,7 @@ packet(){
         만약 버퍼가 가득 찼다는 것은 최소한 하나의 패킷 이상이 붕괴되어 들어왔다고 생각할수있다.
         result = rx_corrput로 break한뒤, task에서 idx까지 debug바이트를 보내고 버퍼 당긴다.
         '''
-        if(read_av == rx_buffer_size)
+        if(result == nothing && read_avail == rx_buffer_size)
             result = rx_corrput
         if(result != nothing)
             break;

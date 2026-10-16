@@ -1,4 +1,4 @@
-// 26-10-15
+// 26-10-17일 이후 temp_fix와 같이 수정
 task(){
     wait = true;
     while(true){

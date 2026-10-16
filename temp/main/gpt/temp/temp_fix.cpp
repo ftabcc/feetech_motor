@@ -1,4 +1,4 @@
-'''17일 이후 task의 break분기 수정 필요.'''
+'''17일 이후 task의 break분기 수정 필요. substract참고'''
 void pi_comm::rx_task(void *arg){
     pi_comm *self = static_cast<pi_comm *>(arg);
     wait = true;

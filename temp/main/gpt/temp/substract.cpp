@@ -57,6 +57,7 @@ packet(){
     while(true){
         read();
 
+        //ready확인해야함.
         // 첫 packet함수 호출이고, rx_buffer에 읽을게 있으면 read_size가 0 이어도 callback의 wait없이 확인process거쳐가자.
         if(read_size=0 && !(first_loop && read_avail!=0)){ 
             notify_wait(timeout) // from rx_callback.

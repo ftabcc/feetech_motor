@@ -1,6 +1,6 @@
 void pi_comm::rx_task(void *arg){
     pi_comm *self = static_cast<pi_comm *>(arg);
-    
+    wait = true;
     while(true){
         TickType_t wait_ticks;
         if(self->rx_wait_start_time_us != 0){
@@ -115,22 +115,27 @@ pi_protocol::rx_result pi_comm::rx_packet(pi_protocol::rxpacket_t &rxpacket)
     pi_protocol::rx_result result = pi_protocol::rx_result::NOTHING;
     while(true){
         std::size_t rx_size = 0;
-
         const esp_err_t ret = tinyusb_cdcacm_read(itf, &rx_buffer[read_available], rx_buffer_size - read_available, &rx_size);
         '''for safe extra iteration, dont clear notify-value.'''
         if (ret != ESP_OK){
-            rx_errors |= pi_protocol::rx_error::CDC_ERR;
-            break;
+            result = pi_protocol::rx_result::CDC_ERR;
         }
         if(rx_size != 0){
             read_available += rx_size;
-            rx_wait_start_time_us = 0;
         }
 
-        bool ready = (!found &&  read_av >= idx + pi_protocol::HEADER_LEN) || // !found일때 header 읽기 가능?
-                (found && !confirm && read_av >= idx + pi_protocol::HEADER_LEN + 3) || // found일때 len,id,inst 필드 읽기 가능?
-                (confirm && read_av >= idx + rx_buffer[idx + pi_protocol::RX_LENGTH_IDX]); // confirm일때 packet 전체 읽기 가능?
+        bool ready = (!found &&            read_av >= idx + pi_protocol::HEADER_LEN) || // !found일때 header 읽기 가능?
+                     (found && !confirm && read_av >= idx + pi_protocol::HEADER_LEN + 3) || // found일때 len,id,inst 필드 읽기 가능?
+                     (confirm &&           read_av >= idx + rx_buffer[idx + pi_protocol::RX_LENGTH_IDX]); // confirm일때 packet 전체 읽기 가능?
         
+        if (rx_size == 0 && !ready){
+            BaseType_t notified = xTaskNotifyWait(0,0xFFFFFFFF,&notify_value,pdMS_TO_TICKS(static_cast<uint32_t>(pi_protocol::RX_TIMEOUT_MS)));
+            if (notified == pdFALSE)
+                result = pi_protocol::rx_result::RX_TIMEOUT;
+        }
+
+        }
+
         if(rx_size == 0 && !ready){
             result = pi_protocol::rx_result::WAITING;
             if(read_available != 0 && rx_wait_start_time_us == 0)

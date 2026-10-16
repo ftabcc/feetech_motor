@@ -102,12 +102,11 @@ private:
     // TaskHandle_t tx_task_handle = nullptr;
 
     uint8_t rx_buffer[pi_protocol::RXPACKET_MAX_LEN*N]{};
-    int64_t rx_wait_start_time_us = 0;
     size_t idx = 0; // 0~ max_len*n
     size_t read_available = 0;
     bool found = false;
     bool confirm = false;
-    uint8_t rx_errors = 0;
+    const esp_err_t cdc_err
     
     static void rx_callback(int itf, cdcacm_event_t *event);
 

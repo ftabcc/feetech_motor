@@ -1,14 +1,23 @@
 '''17일 이후 task의 break분기 수정 필요. substract참고'''
 void pi_comm::rx_task(void *arg){
     pi_comm *self = static_cast<pi_comm *>(arg);
-    wait = true;
     while(true){
-        if(wait){
-            BaseType_t notified = xTaskNotifyWait(0,0xFFFFFFFF,&notify_value,portMAX_DELAY);
-            if (notified == pdFALSE){ // max면 무제한 wait아닌가? 
-            }
+        BaseType_t notified = xTaskNotifyWait(0,0xFFFFFFFF,&notify_value,portMAX_DELAY);
+        '''
+        아래 rx_packet함수가 진행중일때 callback에서 notify가 오고, 
+        해당 바이트가 다 처리되어 cdc의 rx_transfer버퍼가 비어있을수 있다.
+        그러나 notify_value는 task에서 처음 받아올때만 초기화 시켜서 나중에 다시 돌아왔을때, 
+        cdc의 rx_transfer버퍼가 비어있음에도 flag가 true일수 있다.
+        따라서 cdc_read할때마다 buffer가 full이 아니라면 notify_value를 초기화하고,
+        full이라면 notify_value를 초기화 하면 안된다.
+        '''
+        if (notified == pdFALSE){
+            '''
+            FreeRTOSConfig.h 에서 INCLUDE_vTaskSuspend는 무한대기 api를 지원하는 여부
+            만약 false이면 최대 틱만큼 wait하고 pdFALSE반납하게 됨. 그럴경우 다시 task loop돌게 해야함.
+            '''
+            continue;
         }
-        wait = True
         while (true){
             pi_protocol::rx_result result = self->rx_packet(rxpacket;);
             
@@ -43,7 +52,6 @@ void pi_comm::rx_task(void *arg){
                 if (xQueueSend(self->tx_queue, &txpacket, pdMS_TO_TICKS(10)) != pdTRUE) {
                     // Do not reset the queue, Preserve the unsent debug bytes and retry later.
                 }'''지금은 tx 큐 가득차는 경우 없어서 send 실패없다고 가정.'''
-                // break;
             }
             if(result == pi_protocol::rx_result::TIMEOUT){
                 txpacket_t txpacket;
@@ -55,7 +63,7 @@ void pi_comm::rx_task(void *arg){
                 if (xQueueSend(self->tx_queue, &txpacket, pdMS_TO_TICKS(10)) != pdTRUE) {
                     // Do not reset the queue, Preserve the unsent debug bytes and retry later.
                 }'''지금은 tx 큐 가득차는 경우 없어서 send 실패없다고 가정.'''
-                // break;
+                break;
             }
             if(result & pi_protocol::rx_error::CDC_ERR){
                 '''ESP-IDF에 여러 에러값이 정의되어 있지만, 공식적 반환값은 ESP_OK, ESP_ERR_INVALID_STATE뿐
@@ -76,7 +84,6 @@ void pi_comm::rx_task(void *arg){
                 if (xQueueSend(self->tx_queue, &txpacket, pdMS_TO_TICKS(10)) != pdTRUE) {
                     // Do not reset the queue, Preserve the unsent debug bytes and retry later.
                 }'''지금은 tx 큐 가득차는 경우 없어서 send 실패없다고 가정.'''
-                // break;
             }
         
             
@@ -123,9 +130,9 @@ void pi_comm::rx_task(void *arg){
             '''
             success: read_avail보고 확인할게 남아있으면 packet함수 한번더 해야함.
             failure: crc_err로 idx를 조금 뒤로 넘겼으니, 추가 확인 필요해서 packet 함수 한번더 해야함.
-            corrupt: 
-            timeout:
+            corrupt: 딱 맞게 패킷 바이트가 온게 아니니, 바이트가 더 들어올수 있다고 가정. packet 함수 한번더 해야함.
             cdc_err: 발생안한다고 가정. or 재시도시 고쳐진다고 가정.  packet함수 한번더 해야함.
+            timeout: 바이트가 더 필요한데 애초에 읽을게 없으니, break하고 notify기다려야함.
             '''
         }
     }

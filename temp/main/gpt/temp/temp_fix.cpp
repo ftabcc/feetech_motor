@@ -300,6 +300,7 @@ pi_protocol::rx_result pi_comm::rx_packet(pi_protocol::rxpacket_t &rxpacket)
             else if(notified == pdTRUE)
                 continue;
         }
+        
 
         if (ready){
             if(!found){

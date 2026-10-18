@@ -104,6 +104,7 @@ private:
     uint8_t rx_buffer[pi_protocol::RXPACKET_MAX_LEN*N]{};
     size_t idx = 0; // 0~ max_len*n
     size_t read_available = 0;
+    bool ready = false;
     bool buffer_full = false;
     bool found = false;
     bool confirm = false;

@@ -164,15 +164,22 @@ void pi_comm::rx_task(void *arg){
                 '''
             }
             if(result == pi_protocol::rx_result::TIMEOUT){
-                txpacket_t txpacket;
-                txpacket.data_len = ??; // n-bytes
-                txpacket.id = self->warning_packet_id++;
-                txpacket.inst = ??; // TIMEOUT_ERR
-                txpacket.err = ??;
-                memcpy(txpacket.data, "abcd...(n)", txpacket.data_len);
-                if (xQueueSend(self->tx_queue, &txpacket, pdMS_TO_TICKS(10)) != pdTRUE) {
-                    // Do not reset the queue, Preserve the unsent debug bytes and retry later.
-                }'''지금은 tx 큐 가득차는 경우 없어서 send 실패없다고 가정.'''
+                if(prev_result == pi_protocol::rx_result::TIMEOUT && self->prev_read_available == self->read_available){
+                    break;
+                }
+                else{
+                    txpacket_t txpacket;
+                    txpacket.data_len = ??; // n-bytes
+                    txpacket.id = self->warning_packet_id++;
+                    txpacket.inst = ??; // TIMEOUT_ERR
+                    txpacket.err = ??;
+                    memcpy(txpacket.data, "abcd...(n)", txpacket.data_len);
+                    if (xQueueSend(self->tx_queue, &txpacket, pdMS_TO_TICKS(10)) != pdTRUE) {
+                        // Do not reset the queue, Preserve the unsent debug bytes and retry later.
+                    }'''지금은 tx 큐 가득차는 경우 없어서 send 실패없다고 가정.'''
+
+                    prev_read_available = read_available;
+                }
                 '''
                 ================
                 1) 만약 break하고 task의 wait확인한다면?
@@ -187,6 +194,7 @@ void pi_comm::rx_task(void *arg){
                                     result = timeout
                                 if 이전이 timeout 발생했지만, 바이트가 변화안했다면?
                                     result = waiting, task break하고 task wait무한대기
+                                
                         if read !=0 
                             정상작동
                     if wait반환안하면? task의 wait에서 무한대기
@@ -262,45 +270,54 @@ pi_protocol::rx_result pi_comm::rx_packet(pi_protocol::rxpacket_t &rxpacket)
 {
     pi_protocol::rx_result result = pi_protocol::rx_result::NOTHING;
     while(true){
-        std::size_t rx_size = 0;
-        cdc_err = tinyusb_cdcacm_read(itf, &rx_buffer[read_available], rx_buffer_size - read_available, &rx_size);
-        '''for safe extra iteration, dont clear notify-value.'''
-        if (cdc_err != ESP_OK){
-            '''ESP-IDF에 여러 에러값이 정의되어 있지만, 공식적 반환값은 ESP_OK, ESP_ERR_INVALID_STATE뿐
-            **ESP_ERR_INVALID_STATE의 원인**
-            1) tinyusb_cdcacm_init()이 성공적으로 실행되지 않음
-            2) 전달한 itf에 해당하는 CDC-ACM 인터페이스가 초기화되지 않음
-            3) 해당 인터페이스가 해제되었거나 초기화 상태가 잘못됨'''
-            if(consecutive_cdc_err_count == 0){
-                consecutive_cdc_err_count += 1;
-                continue;}
-            if(consecutive_cdc_err_count == 5){
-                result = pi_protocol::rx_result::CDC_ERR;
-                break;}
+        while(true){
+            std::size_t rx_size = 0;
+            cdc_err = tinyusb_cdcacm_read(itf, &rx_buffer[read_available], rx_buffer_size - read_available, &rx_size);
+            '''for safe extra iteration, dont clear notify-value.'''
+            if (cdc_err == ESP_OK){
+                consecutive_cdc_err_count = 0;
+            }
+            else{
+                '''ESP-IDF에 여러 에러값이 정의되어 있지만, 공식적 반환값은 ESP_OK, ESP_ERR_INVALID_STATE뿐
+                **ESP_ERR_INVALID_STATE의 원인**
+                1) tinyusb_cdcacm_init()이 성공적으로 실행되지 않음
+                2) 전달한 itf에 해당하는 CDC-ACM 인터페이스가 초기화되지 않음
+                3) 해당 인터페이스가 해제되었거나 초기화 상태가 잘못됨'''
+                if(consecutive_cdc_err_count == 0){
+                    consecutive_cdc_err_count += 1;
+                    continue;}
+                if(consecutive_cdc_err_count == 5){
+                    result = pi_protocol::rx_result::CDC_ERR;
+                    break;}
+            }
+            
+            if (rx_size != 0){
+                read_available += rx_size;
+                if(read_available == sizeof(rx_buffer)){
+                    buffer_full = true; // 나중에 들어오는 바이트들과 연결될 수 있으니, idx,found,confirm등은 유지
+                }
+                ready = (!found &&            read_available >= idx + pi_protocol::HEADER_LEN) || // !found일때 header 읽기 가능?
+                         (found && !confirm && read_available >= idx + pi_protocol::HEADER_LEN + 3) || // found일때 len,id,inst 필드 읽기 가능?
+                         (confirm &&           read_available >= idx + rx_buffer[idx + pi_protocol::RX_LENGTH_IDX]); // confirm일때 packet 전체 읽기 가능?
+            }
+            else if (rx_size == 0 && !ready){
+                BaseType_t notified = xTaskNotifyWait(0,0xFFFFFFFF,&notify_value,pdMS_TO_TICKS(static_cast<uint32_t>(pi_protocol::RX_TIMEOUT_MS)));
+                if (notified == pdFALSE)
+                    if (read_available != 0){
+                        result = pi_protocol::rx_result::TIMEOUT;}
+                    if (read_available == 0){
+                        result = pi_protocol::rx_result::WAITING;}
+                    break;
+                    '''나중에 들어오는 바이트들과 연결될 수 있으니, idx,found,confirm등은 유지'''
+                else if(notified == pdTRUE)
+                    continue;
+            }
+            else{// rx_size == 0 && ready
+                break;
+            }
         }
-        else{
-            consecutive_cdc_err_count = 0;
-        }
-        if(rx_size != 0){
-            read_available += rx_size;
-        }
-        '''cdc_read를 while안에서 rx_size가 0이 될때까지 읽게 할까?'''
 
-        
-        bool ready = (!found &&            read_available >= idx + pi_protocol::HEADER_LEN) || // !found일때 header 읽기 가능?
-                     (found && !confirm && read_available >= idx + pi_protocol::HEADER_LEN + 3) || // found일때 len,id,inst 필드 읽기 가능?
-                     (confirm &&           read_available >= idx + rx_buffer[idx + pi_protocol::RX_LENGTH_IDX]); // confirm일때 packet 전체 읽기 가능?
-        
-        if (rx_size == 0 && !ready){
-            BaseType_t notified = xTaskNotifyWait(0,0xFFFFFFFF,&notify_value,pdMS_TO_TICKS(static_cast<uint32_t>(pi_protocol::RX_TIMEOUT_MS)));
-            if (notified == pdFALSE)
-                result = pi_protocol::rx_result::RX_TIMEOUT;
-                '''나중에 들어오는 바이트들과 연결될 수 있으니, idx,found,confirm등은 유지'''
-            else if(notified == pdTRUE)
-                continue;
-        }
-        
-
+        // parsing_process
         if (ready){
             if(!found){
                 if (read_available >= idx + pi_protocol::HEADER_LEN){ // header 필드 읽기 가능
@@ -354,11 +371,7 @@ pi_protocol::rx_result pi_comm::rx_packet(pi_protocol::rxpacket_t &rxpacket)
                 }
             }
         }
-            
-        if(read_available == sizeof(rx_buffer)){
-            buffer_full = true;
-            '''나중에 들어오는 바이트들과 연결될 수 있으니, idx,found,confirm등은 유지'''
-        }
+        
         if(result != pi_protocol::rx_result::NOTHING)
             break;
     }

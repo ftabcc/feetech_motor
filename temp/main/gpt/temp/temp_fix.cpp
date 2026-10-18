@@ -78,21 +78,36 @@ void pi_comm::rx_task(void *arg){
                 1) 정확하게 정상패킷만 온경우:
                     ===============================
                     만약 break하고 task wait확인한다면?
-                    if 바로 task가 wait 반환 (이전flag때문에)
-                        if rx_size =0 
-                            if wait 하다가 timeout..  result = timeout말고 wait in task변수를 통해task while break
+                    if 바로 task가 wait 반환 (이전flag때문일수도)
+                        if rx_size =0 & !ready
+                            if wait 하다가 timeout
+                                if read_av =0
+                                    result = wait후 task while break
                         if rx_size !=0 
                             정상작동
                     if task가 wait반환 안하면 그냥 그대로 무한대기시키기
                     =======================
                     만약 break없이 함수 바로가면?
-                    if rx_size =0
+                    if rx_size =0 & !ready &
                         if 함수가 wait 바로 반환(이전flag때문 일수도...? 직접 읽어봐야함)
                             함수의 continue로 read다시 진행
-                        if wait 하다가 timeout..  result = timeout말고 wait in task변수를 통해task while break
+                        if wait 하다가 timeout
+                            if read_av =0
+                                result = wait후 task while break
                     if rx_size !=0
                         정상작동
                 2) 정상패킷뒤에 미확인 바이트가 있는 경우: 꼭 task의 wait확인 없이 바로 rx_packet실행
+                    만약 break하고 task wait확인한다면?
+                    if task가 wait바로 반환한다면?
+                        if rx_size =0 & !ready
+                            if wait 하다가 timeout
+                                if read_av =0
+                                    result = wait후 task while break
+                        if rx_size !=0 
+                            정상작동
+                    if task가 wait반환 안하면 미확인 바이트 남게되어서 안됨.
+                    만약 
+
                 '''
                 if (self->read_available == idx + self->packet_len){
                     
@@ -121,9 +136,16 @@ void pi_comm::rx_task(void *arg){
                 idx옮겼으니 wait확인없이 바로 rx_packet진행
                 1) 만약 break하고 task의 wait확인한다면?
                     if wait가 바로 반환(이전flag때문일수도?)
-
-
+                        if read=0 & !ready
+                            if wait 하다가 timeout
+                        if read !=0 
+                            정상작동
+                    if wait반환안하면? task의 wait에서 무한대기하며 기존 남은 바이트 확인 못함.
                 2) 만약 break없이 바로 함수간다면?
+                    if read = 0 & !ready
+                        if wait 하다가 timeout
+                    if read!=0
+                        정상작동
                 '''
             }
             if(result == pi_protocol::rx_result::TIMEOUT){

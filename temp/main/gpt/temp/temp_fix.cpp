@@ -1,4 +1,6 @@
-'''18일 이후 task의 각 result별 break,continue여부 설정필요. substract참고'''
+'''19일 이후. substract참고'''
+gpt 변수명추천 질문제목에 대해 여러수정할것들 있음
+
 void pi_comm::rx_task(void *arg){
     pi_comm *self = static_cast<pi_comm *>(arg);
     while(true){
@@ -35,6 +37,7 @@ void pi_comm::rx_task(void *arg){
                 처리 필요 x
                 cdc_err: 바이트스트림에 관한 문제가 아니니 따로 debug 보내지 않고 경고만 보낸다.
                 '''
+                // size(rx_buffer) > max_packet_len이라면 buffer_full일때 idx = 0이어서 바이트 못보내는 문제 없음
                 size_t sent_bytes = 0;
                 while (sent_bytes < self->idx)
                 {
@@ -59,6 +62,7 @@ void pi_comm::rx_task(void *arg){
                     self->idx = 0;
                     self->read_available -= sent_bytes;
                 }
+                buffer_full = false;
             }
             
             if(result == pi_protocol::rx_result::SUCCESS){
@@ -120,13 +124,6 @@ void pi_comm::rx_task(void *arg){
                     if rx_size !=0
                         정상작동
                 '''
-                if (self->read_available == idx + self->packet_len){
-                    
-                    break;
-                }
-                else if(self->read_available > idx + self->packet_len){
-                    continue;
-                }
             }
 
             // send warning about strange case
@@ -275,10 +272,9 @@ pi_protocol::rx_result pi_comm::rx_packet(pi_protocol::rxpacket_t &rxpacket)
                 1) tinyusb_cdcacm_init()이 성공적으로 실행되지 않음
                 2) 전달한 itf에 해당하는 CDC-ACM 인터페이스가 초기화되지 않음
                 3) 해당 인터페이스가 해제되었거나 초기화 상태가 잘못됨'''
-                if(consecutive_cdc_err_count == 0){
-                    consecutive_cdc_err_count += 1;
-                    continue;}
-                if(consecutive_cdc_err_count == 5){
+                ++consecutive_cdc_err_count;
+                if(consecutive_cdc_err_count >= CDC_ERR_LIMIT){
+                    consecutive_cdc_err_count = 0;
                     result = pi_protocol::rx_result::CDC_ERR;
                     break;}
             }
@@ -288,24 +284,25 @@ pi_protocol::rx_result pi_comm::rx_packet(pi_protocol::rxpacket_t &rxpacket)
                 if(read_available == sizeof(rx_buffer)){
                     buffer_full = true; // 나중에 들어오는 바이트들과 연결될 수 있으니, idx,found,confirm등은 유지
                 }
-                ready = (!found &&            read_available >= idx + pi_protocol::HEADER_LEN) || // !found일때 header 읽기 가능?
-                         (found && !confirm && read_available >= idx + pi_protocol::HEADER_LEN + 3) || // found일때 len,id,inst 필드 읽기 가능?
-                         (confirm &&           read_available >= idx + rx_buffer[idx + pi_protocol::RX_LENGTH_IDX]); // confirm일때 packet 전체 읽기 가능?
             }
-            else if (rx_size == 0 && !ready){
-                BaseType_t notified = xTaskNotifyWait(0,0xFFFFFFFF,&notify_value,pdMS_TO_TICKS(static_cast<uint32_t>(pi_protocol::RX_TIMEOUT_MS)));
-                if (notified == pdFALSE)
-                    if (read_available != 0){
-                        result = pi_protocol::rx_result::TIMEOUT;}
-                    if (read_available == 0){
-                        result = pi_protocol::rx_result::WAITING;}
+            ready = (!found &&            read_available >= idx + pi_protocol::HEADER_LEN) || // !found일때 header 읽기 가능?
+                    (found && !confirm && read_available >= idx + pi_protocol::HEADER_LEN + 3) || // found일때 len,id,inst 필드 읽기 가능?
+                    (confirm &&           read_available >= idx + rx_buffer[idx + pi_protocol::RX_LENGTH_IDX]); // confirm일때 packet 전체 읽기 가능?
+            if (rx_size == 0 && !ready){
+                if(!ready){
+                    BaseType_t notified = xTaskNotifyWait(0,0xFFFFFFFF,&notify_value,pdMS_TO_TICKS(static_cast<uint32_t>(pi_protocol::RX_TIMEOUT_MS)));
+                    if (notified == pdFALSE){
+                        if (read_available != 0){
+                            result = pi_protocol::rx_result::TIMEOUT;}
+                        if (read_available == 0){
+                            result = pi_protocol::rx_result::WAITING;}
+                        break;}//나중에 들어오는 바이트들과 연결될 수 있으니, idx,found,confirm등은 유지
+                    else if(notified == pdTRUE)
+                        continue;
+                }
+                else{ // ready
                     break;
-                    '''나중에 들어오는 바이트들과 연결될 수 있으니, idx,found,confirm등은 유지'''
-                else if(notified == pdTRUE)
-                    continue;
-            }
-            else{// rx_size == 0 && ready
-                break;
+                }
             }
         }
 
@@ -314,7 +311,7 @@ pi_protocol::rx_result pi_comm::rx_packet(pi_protocol::rxpacket_t &rxpacket)
             if(!found){
                 if (read_available >= idx + pi_protocol::HEADER_LEN){ // header 필드 읽기 가능
                     while (idx <= read_available - pi_protocol::HEADER_LEN){// limit까지만 헤더 확인 가능
-                        uint8_t *p = (uint8_t *)memchr(&rx_buffer[idx], 0xFF, (size_t)(read_available - header_len - idx + 1));
+                        uint8_t *p = (uint8_t *)memchr(&rx_buffer[idx], 0xFF, (size_t)(read_available - pi_protocol::HEADER_LEN - idx + 1));
                         if (p != nullptr){
                             idx = (uint16_t)(p - rx_buffer);
                             if ((rx_buffer[idx + 1] == 0xFF) &&(rx_buffer[idx + 2] == 0xFD) &&(rx_buffer[idx + 3] == 0)){
@@ -363,9 +360,8 @@ pi_protocol::rx_result pi_comm::rx_packet(pi_protocol::rxpacket_t &rxpacket)
                 }
             }
         }
-        
-        if(result != pi_protocol::rx_result::NOTHING)
-            break;
+    if(result != pi_protocol::rx_result::NOTHING)
+        break;
     }
     return result;
 }

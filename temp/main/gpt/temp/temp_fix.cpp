@@ -76,7 +76,6 @@ void pi_comm::rx_task(void *arg){
                 }
                 '''
                 1) 정확하게 정상패킷만 온경우:
-                    ===============================
                     만약 break하고 task wait확인한다면?
                     if 바로 task가 wait 반환 (이전flag때문일수도)
                         if rx_size =0 & !ready
@@ -86,9 +85,8 @@ void pi_comm::rx_task(void *arg){
                         if rx_size !=0 
                             정상작동
                     if task가 wait반환 안하면 그냥 그대로 무한대기시키기
-                    =======================
                     만약 break없이 함수 바로가면?
-                    if rx_size =0 & !ready &
+                    if rx_size =0 & !ready
                         if 함수가 wait 바로 반환(이전flag때문 일수도...? 직접 읽어봐야함)
                             함수의 continue로 read다시 진행
                         if wait 하다가 timeout
@@ -106,7 +104,18 @@ void pi_comm::rx_task(void *arg){
                         if rx_size !=0 
                             정상작동
                     if task가 wait반환 안하면 미확인 바이트 남게되어서 안됨.
-                    만약 
+                    만약 break없이 함수바로가면?
+                    if rx_size =0 & !ready
+                        if 함수가 wait 바로 반환(이전flag때문 일수도...? 직접 읽어봐야함)
+                            함수의 continue로 read다시 진행
+                        if wait 하다가 timeout
+                            if read_av !=0
+                                result = timeout
+                            if read_av =0
+                                result = wait후 task while break
+                    if rx_size !=0
+                        정상작동
+
 
                 '''
                 if (self->read_available == idx + self->packet_len){
@@ -137,14 +146,20 @@ void pi_comm::rx_task(void *arg){
                 1) 만약 break하고 task의 wait확인한다면?
                     if wait가 바로 반환(이전flag때문일수도?)
                         if read=0 & !ready
-                            if wait 하다가 timeout
+                            if 함수가 wait 바로 반환(위에서 이전flag는 읽었으니, 바로 반환될리는 없는데?)
+                                함수의 continue로 read다시 진행
+                            if wait 하다가 timeout(위에서 이전flag는 읽었으니, 바이트 없는데 반환할 일 없음.)
                         if read !=0 
                             정상작동
                     if wait반환안하면? task의 wait에서 무한대기하며 기존 남은 바이트 확인 못함.
                 2) 만약 break없이 바로 함수간다면?
-                    if read = 0 & !ready
+                    if rx_size =0 & !ready
+                        if 함수가 wait 바로 반환(이전flag때문 일수도...? 직접 읽어봐야함)
+                            함수의 continue로 read다시 진행
                         if wait 하다가 timeout
-                    if read!=0
+                            if read_av !=0
+                                result = timeout
+                    if rx_size !=0
                         정상작동
                 '''
             }
@@ -159,13 +174,35 @@ void pi_comm::rx_task(void *arg){
                     // Do not reset the queue, Preserve the unsent debug bytes and retry later.
                 }'''지금은 tx 큐 가득차는 경우 없어서 send 실패없다고 가정.'''
                 '''
-                break하고 task의 wait확인시 이전flag때문에 바로 반환될수도 있음. 
-                if 바로 task가 wait 반환 
-                        if rx_size =0 
-                            rx_packet바로 return후 task break하고 task wait무한대기
-                        if rx_size !=0 
+                ================
+                1) 만약 break하고 task의 wait확인한다면?
+                    if wait가 바로 반환(이전flag때문일수도?)
+                        if read=0 & !ready
+                            if 함수가 wait 바로 반환(위에서 이전flag는 읽었으니, 바로 반환될리는 없는데?)
+                                함수의 continue로 read다시 진행
+                            if wait 하다가 timeout
+                                if 이전 timeout이 발생했고, 바이트가 변화?
+                                    result = timeout
+                                if 이전이 timeout이 아니면
+                                    result = timeout
+                                if 이전이 timeout 발생했지만, 바이트가 변화안했다면?
+                                    result = waiting, task break하고 task wait무한대기
+                        if read !=0 
                             정상작동
-                if task가 wait반환 안하면 그냥 그대로 무한대기시키기
+                    if wait반환안하면? task의 wait에서 무한대기
+                2) 만약 break없이 바로 함수간다면?
+                    if rx_size =0 & !ready
+                        if 함수가 wait 바로 반환(이전flag때문 일수도...? 직접 읽어봐야함)
+                            함수의 continue로 read다시 진행
+                        if wait 하다가 timeout
+                            if 이전 timeout이 발생했고, 바이트가 변화?
+                                result = timeout
+                            if 이전이 timeout이 아니면
+                                result = timeout
+                            if 이전이 timeout 발생했지만, 바이트가 변화안했다면?
+                                result = waiting, task break하고 task wait무한대기
+                    if rx_size !=0
+                        정상작동
                 '''
                 break;
             }
@@ -189,8 +226,33 @@ void pi_comm::rx_task(void *arg){
                     // Do not reset the queue, Preserve the unsent debug bytes and retry later.
                 }'''지금은 tx 큐 가득차는 경우 없어서 send 실패없다고 가정.'''
                 '''
-                break없이 바로 rx_packet실행하되, 연속cdc_err count 일정이상 넘으면 break하고 task에서 무한대기
+                ====
+                1) 만약 break하고 task의 wait확인한다면?
+                    if wait가 바로 반환(이전flag때문일수도?)
+                        if read=0 & !ready
+                            if 함수가 wait 바로 반환(위에서 이전flag는 읽었으니, 바로 반환될리는 없는데?)
+                                함수의 continue로 read다시 진행
+                            if wait 하다가 timeout
+                                result = timeout
+                        if read !=0 
+                            정상작동
+                        if cdc_err
+                            연속cdc_err count 일정이상 넘으면 result = wait,break하고 task에서 무한대기
+                    if wait반환안하면? task의 wait에서 무한대기
+
+                2) 만약 break없이 바로 함수간다면?
+                    if rx_size =0 & !ready
+                        if 함수가 wait 바로 반환(이전flag때문 일수도...? 직접 읽어봐야함)
+                            함수의 continue로 read다시 진행
+                        if wait 하다가 timeout
+                            result = timeout
+                    if rx_size !=0
+                        정상작동
+                    if cdc_err
+                            연속cdc_err count 일정이상 넘으면 result = wait,break하고 task에서 무한대기
                 '''
+
+
             }
 
             // break처리
@@ -235,6 +297,8 @@ pi_protocol::rx_result pi_comm::rx_packet(pi_protocol::rxpacket_t &rxpacket)
             if (notified == pdFALSE)
                 result = pi_protocol::rx_result::RX_TIMEOUT;
                 '''나중에 들어오는 바이트들과 연결될 수 있으니, idx,found,confirm등은 유지'''
+            else if(notified == pdTRUE)
+                continue;
         }
 
         if (ready){

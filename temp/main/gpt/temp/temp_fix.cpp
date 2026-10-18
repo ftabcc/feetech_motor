@@ -1,29 +1,26 @@
 '''19일 이후. substract참고'''
-gpt 변수명추천 질문제목에 대해 여러수정할것들 있음
+queue _send실패시 처리 수정, cdc_err시 init진행
 
 void pi_comm::rx_task(void *arg){
     pi_comm *self = static_cast<pi_comm *>(arg);
+    
+    pi_protocol::rx_result result = pi_protocol::rx_result::NOTHING;
+    pi_protocol::rx_result prev_result = pi_protocol::rx_result::NOTHING;
+    
     while(true){
         BaseType_t notified = xTaskNotifyWait(0,0xFFFFFFFF,&notify_value,portMAX_DELAY);
-        '''
-        아래 rx_packet함수가 진행중일때 callback에서 notify가 오고, 
-        해당 바이트가 다 처리되어 cdc의 rx_transfer버퍼가 비어있을수 있다.
-        그러나 notify_value는 task에서 처음 받아올때만 초기화 시켜서 나중에 다시 돌아왔을때, 
-        cdc의 rx_transfer버퍼가 비어있음에도 flag가 true일수 있다.
-        따라서 cdc_read할때마다 buffer가 full이 아니라면 notify_value를 초기화하고,
-        full이라면 notify_value를 초기화 하면 안된다.-->value를 직접 컨트롤은 위험함으로 다른방법알아보기.
-        '''
         if (notified == pdFALSE){
             '''
-            FreeRTOSConfig.h 에서 INCLUDE_vTaskSuspend는 무한대기 api를 지원하는 여부
-            만약 false이면 최대 틱만큼 wait하고 pdFALSE반납하게 됨. 그럴경우 다시 task loop돌게 해야함.
+            FreeRTOSConfig.h 에서 INCLUDE_vTaskSuspend == 1이면 portMAX_DELAY를 무한 대기로 사용할 수 있다. 
+            비활성화되어 있으면 대기 시간이 유한할 수 있으므로 pdFALSE 반환 후 다시 대기하도록 처리한다.
             '''
             continue;
         }
 
         // result_process
         while (true){
-            pi_protocol::rx_result result = self->rx_packet(rxpacket;);
+            prev_result = result;
+            result = self->rx_packet(rxpacket;);
 
             // connect byte debug stream.
             if (self->buffer_full || result == pi_protocol::rx_result::SUCCESS){
@@ -63,6 +60,7 @@ void pi_comm::rx_task(void *arg){
                     self->read_available -= sent_bytes;
                 }
                 buffer_full = false;
+                prev_result = result;
             }
             
             if(result == pi_protocol::rx_result::SUCCESS){
@@ -205,7 +203,7 @@ void pi_comm::rx_task(void *arg){
                 '''
                 break;
             }
-            if(result & pi_protocol::rx_error::CDC_ERR){
+            if(result == pi_protocol::rx_result::CDC_ERR){
                 '''ESP-IDF에 여러 에러값이 정의되어 있지만, 공식적 반환값은 ESP_OK, ESP_ERR_INVALID_STATE뿐
                 게다가 로봇이 esp의 모든 uart를 다 사용하고 있고 라즈베리파이와 esp가 유일하게 cdc로 연결된 상황에서 
                 cdc_err이 발생한다면 pi로 err정보를 보낼 수 없음.
@@ -216,16 +214,21 @@ void pi_comm::rx_task(void *arg){
                 1) tinyusb_cdcacm_init()이 성공적으로 실행되지 않음
                 2) 전달한 itf에 해당하는 CDC-ACM 인터페이스가 초기화되지 않음
                 3) 해당 인터페이스가 해제되었거나 초기화 상태가 잘못됨'''
-                txpacket_t txpacket;
-                const char *err_name = esp_err_to_name(self->cdc_err);
-                txpacket.data_len = std::min(strlen(err_name), sizeof(txpacket.data) - 1);
-                txpacket.id = self->warning_packet_id++;
-                txpacket.inst = ??; // CDC_ERR
-                txpacket.err = ??; 
-                memcpy(txpacket.data, err_name, txpacket.data_len);
-                if (xQueueSend(self->tx_queue, &txpacket, pdMS_TO_TICKS(10)) != pdTRUE) {
-                    // Do not reset the queue, Preserve the unsent debug bytes and retry later.
-                }'''지금은 tx 큐 가득차는 경우 없어서 send 실패없다고 가정.'''
+                if(prev_result == pi_protocol::rx_result::CDC_ERR){
+                    break;
+                }
+                else{
+                    txpacket_t txpacket;
+                    const char *err_name = esp_err_to_name(self->cdc_err);
+                    txpacket.data_len = std::min(strlen(err_name), sizeof(txpacket.data) - 1);
+                    txpacket.id = self->warning_packet_id++;
+                    txpacket.inst = ??; // CDC_ERR
+                    txpacket.err = ??; 
+                    memcpy(txpacket.data, err_name, txpacket.data_len);
+                    if (xQueueSend(self->tx_queue, &txpacket, pdMS_TO_TICKS(10)) != pdTRUE) {
+                        // Do not reset the queue, Preserve the unsent debug bytes and retry later.
+                    }'''지금은 tx 큐 가득차는 경우 없어서 send 실패없다고 가정.'''
+                }
                 '''
                 cdc_err처리후 task의 result_process의 break유무에 대해 두가지 모두 문제없음
                 1) 만약 task의 result_process를 break하고 task에서 notify-wait를 확인한다면?
@@ -238,6 +241,8 @@ void pi_comm::rx_task(void *arg){
                                 read_av == 0 -> result = waiting
                         if read !=0 
                             정상작동
+                        if cdc_err
+                            연속 발생시, break
                     if task의 wait가 notify를 반환 안하면 그냥 그대로 무한대기시키기
 
                 2) 만약 break없이 result_process를 한번 더 loop돌아서 rx_packet함수로 바로가면?
@@ -249,13 +254,18 @@ void pi_comm::rx_task(void *arg){
                             read_av == 0 -> result = waiting
                     if rx_size !=0
                         정상작동
+                    if cdc_err
+                        연속 발생시, break
                 '''
+            }
+            if(result == pi_protocol::rx_result::WAITING){
+                break;
             }
         }
     }
 }
 
-pi_protocol::rx_result pi_comm::rx_packet(pi_protocol::rxpacket_t &rxpacket)
+pi_protocol::rx_result pi_comm::rx_packet()
 {
     pi_protocol::rx_result result = pi_protocol::rx_result::NOTHING;
     while(true){
@@ -285,7 +295,7 @@ pi_protocol::rx_result pi_comm::rx_packet(pi_protocol::rxpacket_t &rxpacket)
                     buffer_full = true; // 나중에 들어오는 바이트들과 연결될 수 있으니, idx,found,confirm등은 유지
                 }
             }
-            ready = (!found &&            read_available >= idx + pi_protocol::HEADER_LEN) || // !found일때 header 읽기 가능?
+            bool ready = (!found &&            read_available >= idx + pi_protocol::HEADER_LEN) || // !found일때 header 읽기 가능?
                     (found && !confirm && read_available >= idx + pi_protocol::HEADER_LEN + 3) || // found일때 len,id,inst 필드 읽기 가능?
                     (confirm &&           read_available >= idx + rx_buffer[idx + pi_protocol::RX_LENGTH_IDX]); // confirm일때 packet 전체 읽기 가능?
             if (rx_size == 0 && !ready){

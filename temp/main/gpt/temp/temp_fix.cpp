@@ -18,6 +18,8 @@ void pi_comm::rx_task(void *arg){
             '''
             continue;
         }
+
+        // result_process
         while (true){
             pi_protocol::rx_result result = self->rx_packet(rxpacket;);
 
@@ -75,48 +77,48 @@ void pi_comm::rx_task(void *arg){
                     '''지금은 rx 큐 가득차는 경우 없어서 send 실패없다고 가정.'''
                 }
                 '''
-                1) 정확하게 정상패킷만 온경우:
-                    만약 break하고 task wait확인한다면?
-                    if 바로 task가 wait 반환 (이전flag때문일수도)
+                success처리후 task의 result_process를 break하면 안된다. task의 wait확인 없이 바로 rx_packet함수 진행하도록
+                1) 정확하게 정상패킷만 와서 뒤의 미확인 바이트가 없는 경우:
+                    만약 task의 result_process를 break하고 task에서 notify-wait를 확인한다면?
+                    if task의 wait가 notify를 바로 반환후 함수실행 (이미 확인한 바이트가 속해있던 tx_transfer의 이전flag 때문일수도)
                         if rx_size =0 & !ready
-                            if wait 하다가 timeout
-                                if read_av =0
-                                    result = wait후 task while break
-                        if rx_size !=0 
+                            if 함수의 notify-wait가 바로 반환(위에서 이전flag는 읽었으니, 바로 반환될리는 없지만 혹시 몰라 읽어보기)
+                                continue로 함수안에서 read 다시 진행
+                            if 함수의 notify-wait가 대기하다가 timeout
+                                read_av = 0 -> result = wait후 task의 result_process break
+                        if rx_size != 0 
                             정상작동
-                    if task가 wait반환 안하면 그냥 그대로 무한대기시키기
-                    만약 break없이 함수 바로가면?
+                    if task의 wait가 notify를 반환 안하면 그냥 그대로 무한대기시키기
+
+                    만약 break없이 result_process를 한번 더 loop돌아서 rx_packet함수로 바로가면?
                     if rx_size =0 & !ready
-                        if 함수가 wait 바로 반환(이전flag때문 일수도...? 직접 읽어봐야함)
-                            함수의 continue로 read다시 진행
-                        if wait 하다가 timeout
-                            if read_av =0
-                                result = wait후 task while break
+                        if 함수의 notify-wait가 바로 반환(이미 확인한 바이트가 속해있던 tx_transfer의 이전flag 때문일수도)
+                            continue로 함수안에서 read 다시 진행
+                        if 함수의 notify-wait가 대기하다가 timeout
+                                read_av = 0 -> result = wait후 task의 result_process break
                     if rx_size !=0
                         정상작동
+                        
                 2) 정상패킷뒤에 미확인 바이트가 있는 경우: 꼭 task의 wait확인 없이 바로 rx_packet실행
-                    만약 break하고 task wait확인한다면?
-                    if task가 wait바로 반환한다면?
+                    만약 task의 result_process를 break하고 task에서 notify-wait를 확인한다면?
+                    if task의 wait가 notify를 바로 반환후 함수실행 (이미 확인한 바이트가 속해있던 tx_transfer의 이전flag 때문일수도)
                         if rx_size =0 & !ready
-                            if wait 하다가 timeout
-                                if read_av =0
-                                    result = wait후 task while break
+                            if 함수의 notify-wait가 바로 반환(위에서 이전flag는 읽었으니, 바로 반환될리는 없지만 혹시 몰라 읽어보기)
+                                continue로 함수안에서 read 다시 진행
+                            if 함수의 notify-wait가 대기하다가 timeout
+                                read_av != 0 -> result = timeout
                         if rx_size !=0 
                             정상작동
-                    if task가 wait반환 안하면 미확인 바이트 남게되어서 안됨.
-                    만약 break없이 함수바로가면?
+                    if task의 wait가 notify를 반환 안하면, 미확인 바이트 남게되어서 안됨!!
+                    
+                    만약 break없이 result_process를 한번 더 loop돌아서 rx_packet함수로 바로가면?
                     if rx_size =0 & !ready
-                        if 함수가 wait 바로 반환(이전flag때문 일수도...? 직접 읽어봐야함)
-                            함수의 continue로 read다시 진행
-                        if wait 하다가 timeout
-                            if read_av !=0
-                                result = timeout
-                            if read_av =0
-                                result = wait후 task while break
+                        if 함수의 notify-wait가 바로 반환(이미 확인한 바이트가 속해있던 tx_transfer의 이전flag 때문일수도)
+                            continue로 함수안에서 read 다시 진행
+                        if 함수의 notify-wait가 대기하다가 timeout
+                            read_av != 0 -> result = timeout
                     if rx_size !=0
                         정상작동
-
-
                 '''
                 if (self->read_available == idx + self->packet_len){
                     
@@ -126,7 +128,6 @@ void pi_comm::rx_task(void *arg){
                     continue;
                 }
             }
-
 
             // send warning about strange case
             if(result == pi_protocol::rx_result::FAILURE){ // CRC_ERR, just check next
@@ -142,23 +143,24 @@ void pi_comm::rx_task(void *arg){
                     // Do not reset the queue, Preserve the unsent debug bytes and retry later.
                 }'''지금은 tx 큐 가득차는 경우 없어서 send 실패없다고 가정.'''
                 '''
-                idx옮겼으니 wait확인없이 바로 rx_packet진행
-                1) 만약 break하고 task의 wait확인한다면?
-                    if wait가 바로 반환(이전flag때문일수도?)
+                crc_err처리후 task의 result_process를 break하면 안된다. idx옮겼으니 wait확인없이 미확인 바이트 읽기 위해 바로 rx_packet진행
+                1) 만약 task의 result_process를 break하고 task에서 notify-wait를 확인한다면?
+                    if task의 wait가 notify를 바로 반환후 함수실행 (이미 확인한 바이트가 속해있던 tx_transfer의 이전flag 때문일수도)
                         if read=0 & !ready
-                            if 함수가 wait 바로 반환(위에서 이전flag는 읽었으니, 바로 반환될리는 없는데?)
-                                함수의 continue로 read다시 진행
-                            if wait 하다가 timeout(위에서 이전flag는 읽었으니, 바이트 없는데 반환할 일 없음.)
+                            if 함수의 notify-wait가 바로 반환(위에서 이전flag는 읽었으니, 바로 반환될리는 없지만 혹시 몰라 읽어보기)
+                                continue로 함수안에서 read 다시 진행
+                            if 함수의 notify-wait가 대기하다가 timeout
+                                read_av != 0 -> result = timeout
                         if read !=0 
                             정상작동
-                    if wait반환안하면? task의 wait에서 무한대기하며 기존 남은 바이트 확인 못함.
-                2) 만약 break없이 바로 함수간다면?
+                    if task의 wait가 notify를 반환 안하면, 미확인 바이트 남게되어서 안됨!!
+
+                2) 만약 break없이 result_process를 한번 더 loop돌아서 rx_packet함수로 바로가면?
                     if rx_size =0 & !ready
-                        if 함수가 wait 바로 반환(이전flag때문 일수도...? 직접 읽어봐야함)
-                            함수의 continue로 read다시 진행
-                        if wait 하다가 timeout
-                            if read_av !=0
-                                result = timeout
+                        if 함수의 notify-wait가 바로 반환(이미 확인한 바이트가 속해있던 tx_transfer의 이전flag 때문일수도)
+                            continue로 함수안에서 read 다시 진행
+                        if 함수의 notify-wait가 대기하다가 timeout
+                            read_av != 0 -> result = timeout
                     if rx_size !=0
                         정상작동
                 '''
@@ -181,34 +183,26 @@ void pi_comm::rx_task(void *arg){
                     prev_read_available = read_available;
                 }
                 '''
-                ================
-                1) 만약 break하고 task의 wait확인한다면?
-                    if wait가 바로 반환(이전flag때문일수도?)
+                timeout처리후 task의 result_process의 break유무에 대해 두가지 모두 문제없음
+                1) 만약 task의 result_process를 break하고 task에서 notify-wait를 확인한다면?
+                    if task의 wait가 notify를 바로 반환후 함수실행 (이미 확인한 바이트가 속해있던 tx_transfer의 이전flag 때문일수도)
                         if read=0 & !ready
-                            if 함수가 wait 바로 반환(위에서 이전flag는 읽었으니, 바로 반환될리는 없는데?)
-                                함수의 continue로 read다시 진행
-                            if wait 하다가 timeout
-                                if 이전 timeout이 발생했고, 바이트가 변화?
-                                    result = timeout
-                                if 이전이 timeout이 아니면
-                                    result = timeout
-                                if 이전이 timeout 발생했지만, 바이트가 변화안했다면?
-                                    result = waiting, task break하고 task wait무한대기
-                                
+                            if 함수의 notify-wait가 바로 반환(위에서 이전flag는 읽었으니, 바로 반환될리는 없지만 혹시 몰라 읽어보기)
+                                continue로 함수안에서 read 다시 진행
+                            if 함수의 notify-wait가 대기하다가 timeout
+                                read_av != 0 -> result = timeout
+                                read_av == 0 -> result = waiting
                         if read !=0 
                             정상작동
-                    if wait반환안하면? task의 wait에서 무한대기
-                2) 만약 break없이 바로 함수간다면?
+                    if task의 wait가 notify를 반환 안하면 그냥 그대로 무한대기시키기
+
+                2) 만약 break없이 result_process를 한번 더 loop돌아서 rx_packet함수로 바로가면?
                     if rx_size =0 & !ready
-                        if 함수가 wait 바로 반환(이전flag때문 일수도...? 직접 읽어봐야함)
-                            함수의 continue로 read다시 진행
-                        if wait 하다가 timeout
-                            if 이전 timeout이 발생했고, 바이트가 변화?
-                                result = timeout
-                            if 이전이 timeout이 아니면
-                                result = timeout
-                            if 이전이 timeout 발생했지만, 바이트가 변화안했다면?
-                                result = waiting, task break하고 task wait무한대기
+                        if 함수의 notify-wait가 바로 반환(이미 확인한 바이트가 속해있던 tx_transfer의 이전flag 때문일수도)
+                            continue로 함수안에서 read 다시 진행
+                        if 함수의 notify-wait가 대기하다가 timeout
+                            read_av != 0 -> result = timeout
+                            read_av == 0 -> result = waiting
                     if rx_size !=0
                         정상작동
                 '''
@@ -216,9 +210,11 @@ void pi_comm::rx_task(void *arg){
             }
             if(result & pi_protocol::rx_error::CDC_ERR){
                 '''ESP-IDF에 여러 에러값이 정의되어 있지만, 공식적 반환값은 ESP_OK, ESP_ERR_INVALID_STATE뿐
-                게다가 esp의 모든 uart를 다 사용하고 있고 라즈베리파이와 esp가 유일하게 cdc로 연결된 상황에서 
-                cdc_err이 발생한다면 err정보를 받을 수 없음. 단순히 재부팅 밖에.. 
-                그래서 err발생해도 조치할 방법이 없으니, cdc통신부분만 코드로 검증하고, cdc_err는 발생하지 않는다고 가정한다.
+                게다가 로봇이 esp의 모든 uart를 다 사용하고 있고 라즈베리파이와 esp가 유일하게 cdc로 연결된 상황에서 
+                cdc_err이 발생한다면 pi로 err정보를 보낼 수 없음.
+                그래서 err발생해도 조치할 방법이 재시도/재부팅 밖에 없다. 
+                cdc통신부분만 따로 검증하고 사용하며, cdc_err는 발생하지 않는다고 가정한다.
+                발생해도, warning만 보내고 자동적으로 고쳐진다고 가정하고 task에서 notify-wait하도록 한다.
                 **ESP_ERR_INVALID_STATE의 원인**
                 1) tinyusb_cdcacm_init()이 성공적으로 실행되지 않음
                 2) 전달한 itf에 해당하는 CDC-ACM 인터페이스가 초기화되지 않음
@@ -234,33 +230,29 @@ void pi_comm::rx_task(void *arg){
                     // Do not reset the queue, Preserve the unsent debug bytes and retry later.
                 }'''지금은 tx 큐 가득차는 경우 없어서 send 실패없다고 가정.'''
                 '''
-                ====
-                1) 만약 break하고 task의 wait확인한다면?
-                    if wait가 바로 반환(이전flag때문일수도?)
+                cdc_err처리후 task의 result_process의 break유무에 대해 두가지 모두 문제없음
+                1) 만약 task의 result_process를 break하고 task에서 notify-wait를 확인한다면?
+                    if task의 wait가 notify를 바로 반환후 함수실행 (이미 확인한 바이트가 속해있던 tx_transfer의 이전flag 때문일수도)
                         if read=0 & !ready
-                            if 함수가 wait 바로 반환(위에서 이전flag는 읽었으니, 바로 반환될리는 없는데?)
-                                함수의 continue로 read다시 진행
-                            if wait 하다가 timeout
-                                result = timeout
+                            if 함수의 notify-wait가 바로 반환(위에서 이전flag는 읽었으니, 바로 반환될리는 없지만 혹시 몰라 읽어보기)
+                                continue로 함수안에서 read 다시 진행
+                            if 함수의 notify-wait가 대기하다가 timeout
+                                read_av != 0 -> result = timeout
+                                read_av == 0 -> result = waiting
                         if read !=0 
                             정상작동
-                        if cdc_err
-                            연속cdc_err count 일정이상 넘으면 result = wait,break하고 task에서 무한대기
-                    if wait반환안하면? task의 wait에서 무한대기
+                    if task의 wait가 notify를 반환 안하면 그냥 그대로 무한대기시키기
 
-                2) 만약 break없이 바로 함수간다면?
+                2) 만약 break없이 result_process를 한번 더 loop돌아서 rx_packet함수로 바로가면?
                     if rx_size =0 & !ready
-                        if 함수가 wait 바로 반환(이전flag때문 일수도...? 직접 읽어봐야함)
-                            함수의 continue로 read다시 진행
-                        if wait 하다가 timeout
-                            result = timeout
+                        if 함수의 notify-wait가 바로 반환(이미 확인한 바이트가 속해있던 tx_transfer의 이전flag 때문일수도)
+                            continue로 함수안에서 read 다시 진행
+                        if 함수의 notify-wait가 대기하다가 timeout
+                            read_av != 0 -> result = timeout
+                            read_av == 0 -> result = waiting
                     if rx_size !=0
                         정상작동
-                    if cdc_err
-                        연속cdc_err count 일정이상 넘으면 result = wait,break하고 task에서 무한대기
                 '''
-
-
             }
         }
     }

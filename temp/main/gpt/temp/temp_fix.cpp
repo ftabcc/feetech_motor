@@ -249,19 +249,11 @@ void pi_comm::rx_task(void *arg){
                     if rx_size !=0
                         정상작동
                     if cdc_err
-                            연속cdc_err count 일정이상 넘으면 result = wait,break하고 task에서 무한대기
+                        연속cdc_err count 일정이상 넘으면 result = wait,break하고 task에서 무한대기
                 '''
 
 
             }
-
-            // break처리
-            '''
-            success: read_avail보고 확인할게 남아있으면 packet함수 한번더 해야함.
-            failure: crc_err로 idx를 조금 뒤로 넘겼으니, 추가 확인 필요해서 packet 함수 한번더 해야함.
-            cdc_err: 발생안한다고 가정. or 재시도시 고쳐진다고 가정.  packet함수 한번더 해야함.
-            timeout: 바이트가 더 필요한데 애초에 읽을게 없으니, break하고 notify기다려야함.
-            '''
         }
     }
 }
@@ -279,8 +271,15 @@ pi_protocol::rx_result pi_comm::rx_packet(pi_protocol::rxpacket_t &rxpacket)
             1) tinyusb_cdcacm_init()이 성공적으로 실행되지 않음
             2) 전달한 itf에 해당하는 CDC-ACM 인터페이스가 초기화되지 않음
             3) 해당 인터페이스가 해제되었거나 초기화 상태가 잘못됨'''
-            result = pi_protocol::rx_result::CDC_ERR;
-            break;
+            if(consecutive_cdc_err_count == 0){
+                consecutive_cdc_err_count += 1;
+                continue;}
+            if(consecutive_cdc_err_count == 5){
+                result = pi_protocol::rx_result::CDC_ERR;
+                break;}
+        }
+        else{
+            consecutive_cdc_err_count = 0;
         }
         if(rx_size != 0){
             read_available += rx_size;
